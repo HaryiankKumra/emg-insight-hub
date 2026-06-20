@@ -763,6 +763,8 @@ function ReportView() {
   const { active } = useEmgStore();
   const reportRef = useRef<HTMLDivElement>(null);
   if (!active) return <EmptyState msg="No dataset loaded" />;
+  const ds = active;
+
 
   const metrics = CHANNELS.map((ch) => {
     const arr = channelArray(active, ch);
