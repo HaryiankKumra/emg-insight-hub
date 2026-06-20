@@ -783,7 +783,7 @@ function ReportView() {
     const img = canvas.toDataURL("image/png");
     const pdf = new jsPDF({ orientation: "portrait", unit: "px", format: [canvas.width, canvas.height] });
     pdf.addImage(img, "PNG", 0, 0, canvas.width, canvas.height);
-    pdf.save(`emg-report-${active.id}.pdf`);
+    pdf.save(`emg-report-${ds.id}.pdf`);
   }
 
   function exportCsv() {
@@ -799,7 +799,7 @@ function ReportView() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `emg-report-${active.id}.csv`;
+    a.download = `emg-report-${ds.id}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
