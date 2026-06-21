@@ -210,8 +210,8 @@ export function assessEmgSignalQuality(
     signal,
     sampleRate,
     50, // RMS window
-    28, // Percentile for activation threshold (lowered from 40 to catch weaker reps)
-    60, // Min window duration (lowered from 100 to 60ms to catch short reps)
+    40, // Percentile for activation threshold
+    100, // Min window duration (100ms)
     minRepDistance, // Gap between windows = gap between reps
   );
 
