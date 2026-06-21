@@ -7,6 +7,7 @@ interface StoreCtx {
   datasets: EmgDataset[];
   activeId: string | null;
   active: EmgDataset | null;
+  rawActive: EmgDataset | null; // Raw dataset without DSP filtering (for quality metrics)
   addDataset: (d: EmgDataset) => void;
   removeDataset: (id: string) => void;
   setActive: (id: string) => void;
@@ -54,6 +55,7 @@ export function EmgStoreProvider({ children }: { children: ReactNode }) {
     datasets,
     activeId,
     active,
+    rawActive, // Exposed for quality metrics
     addDataset: (d) => {
       setDatasets((prev) => [...prev, d]);
       setActiveId(d.id);

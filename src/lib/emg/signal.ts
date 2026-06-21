@@ -89,6 +89,51 @@ export function snrFromBaseline(active: number[], baseline: number[]): number {
   return 20 * Math.log10(sigRms / noiseRms);
 }
 
+// Calculate quality from RAW (unfiltered) dataset - gives accurate baseline SNR
+// This avoids high-pass filter artifacts affecting the quality grade
+export function calculateQualityFromRaw(
+  rawDs: EmgDataset,
+  channels: Channel[] = CHANNELS,
+  skipFirstSecs = 2,
+): Record<Channel, { snrDb: number; label: string; score: number }> {
+  const fs = rawDs.sampleRate;
+  const skipSamples = Math.floor(skipFirstSecs * fs);
+  const usableSamples = rawDs.samples.filter((_, idx) => idx >= skipSamples);
+
+  if (usableSamples.length === 0) {
+    return {
+      ch1: { snrDb: 0, label: "POOR", score: 0 },
+      ch2: { snrDb: 0, label: "POOR", score: 0 },
+      ch3: { snrDb: 0, label: "POOR", score: 0 },
+      ch4: { snrDb: 0, label: "POOR", score: 0 },
+    };
+  }
+
+  // Split into baseline (first 1/3) and active (remaining 2/3)
+  const baselineCount = Math.max(10, Math.floor(usableSamples.length / 3));
+  const baseline = usableSamples.slice(0, baselineCount);
+  const active = usableSamples.slice(baselineCount);
+
+  const result: Record<Channel, { snrDb: number; label: string; score: number }> = {
+    ch1: { snrDb: 0, label: "POOR", score: 0 },
+    ch2: { snrDb: 0, label: "POOR", score: 0 },
+    ch3: { snrDb: 0, label: "POOR", score: 0 },
+    ch4: { snrDb: 0, label: "POOR", score: 0 },
+  };
+
+  for (const ch of channels) {
+    const baselineValues = baseline.map((s) => s[ch]);
+    const activeValues = active.map((s) => s[ch]);
+
+    const snrDb = snrFromBaseline(activeValues, baselineValues);
+    const { label, score } = qualityFromSnr(snrDb);
+
+    result[ch] = { snrDb, label, score };
+  }
+
+  return result;
+}
+
 // Sliding-window RMS envelope (window in samples).
 export function rmsEnvelope(a: number[], window: number): number[] {
   const N = a.length;
@@ -348,8 +393,11 @@ export function createNotch(f0: number, fs: number, q = 10): BiquadFilter {
 }
 
 // Processes a complete dataset through the filter pipeline
-export function preprocessDataset(ds: EmgDataset): EmgDataset {
+// Processes a complete dataset through the filter pipeline
+// Options: skipFirstSecs = skip first N seconds (default 2 for filter warm-up + startup transients)
+export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2): EmgDataset {
   const fs = ds.sampleRate;
+  const skipSamples = Math.floor(skipFirstSecs * fs);
 
   // Create unique filter pipelines for each channel
   const createPipeline = () => {
@@ -367,7 +415,7 @@ export function preprocessDataset(ds: EmgDataset): EmgDataset {
     ch4: createPipeline(),
   };
 
-  // Warm up filters to eliminate transient spikes at the start (typically 0.2-0.5 sec of samples)
+  // Warm up filters to eliminate transient spikes at the start
   const warmupSamples = Math.max(1, Math.floor(fs * 0.5)); // 500ms warm-up
   
   const processCh = (val: number, pipe: ReturnType<typeof createPipeline>) => {
@@ -389,15 +437,19 @@ export function preprocessDataset(ds: EmgDataset): EmgDataset {
   }
 
   // Process all samples (now filters have settled, no transient)
-  const processedSamples = ds.samples.map((s) => {
-    return {
-      t: s.t,
-      ch1: processCh(s.ch1, pipelines.ch1),
-      ch2: processCh(s.ch2, pipelines.ch2),
-      ch3: processCh(s.ch3, pipelines.ch3),
-      ch4: processCh(s.ch4, pipelines.ch4),
-    };
-  });
+  const processedSamples = ds.samples
+    .map((s, idx) => {
+      return {
+        t: s.t,
+        ch1: processCh(s.ch1, pipelines.ch1),
+        ch2: processCh(s.ch2, pipelines.ch2),
+        ch3: processCh(s.ch3, pipelines.ch3),
+        ch4: processCh(s.ch4, pipelines.ch4),
+        _originalIdx: idx, // track original index
+      } as EmgSample & { _originalIdx: number };
+    })
+    .filter((s) => s._originalIdx >= skipSamples) // Skip first N seconds
+    .map(({ _originalIdx, ...s }) => s as EmgSample); // Remove tracking field
 
   return {
     ...ds,

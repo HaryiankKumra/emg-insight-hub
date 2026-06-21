@@ -1,5 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { GoogleGenAI } from "@google/genai";
+import {
+  CHANNELS,
+  CHANNEL_LABELS,
+  channelArray,
+  fftMagnitude,
+  spectralMetrics,
+  rms,
+  mav,
+  calculateQualityFromRaw,
+  type Channel,
+  type EmgDataset,
+} from "./emg/signal";
 
 export interface ChannelSummary {
   channel: string;
@@ -66,6 +78,34 @@ function getCacheKey(data: AnalyzeInput): string {
       snr: c.snr_db.toFixed(1),
     })),
   );
+}
+
+// Helper: compute channel summaries from raw dataset with proper quality calculation
+export function computeChannelSummaries(
+  ds: EmgDataset,
+  skipFirstSecs = 2,
+): ChannelSummary[] {
+  // Get quality from raw (unfiltered) data for accurate baseline SNR
+  const rawQuality = calculateQualityFromRaw(ds, CHANNELS, skipFirstSecs);
+
+  return CHANNELS.map((ch: Channel) => {
+    const arr = channelArray(ds, ch);
+    const { freq, mag } = fftMagnitude(arr, ds.sampleRate);
+    const s = spectralMetrics(freq, mag);
+    const q = rawQuality[ch];
+
+    return {
+      channel: ch.toUpperCase(),
+      label: CHANNEL_LABELS[ch],
+      rms_mV: +rms(arr).toFixed(4),
+      mav_mV: +mav(arr).toFixed(4),
+      snr_db: +q.snrDb.toFixed(2),
+      quality_label: q.label,
+      mean_freq_hz: +s.meanFreq.toFixed(1),
+      median_freq_hz: +s.medianFreq.toFixed(1),
+      dominant_freq_hz: +s.dominantFreq.toFixed(1),
+    };
+  });
 }
 
 export const analyzeEmg = createServerFn({ method: "POST" })
