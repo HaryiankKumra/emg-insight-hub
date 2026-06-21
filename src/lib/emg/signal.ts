@@ -80,6 +80,49 @@ export function snr(a: number[]): number {
   return 10 * Math.log10(Math.max(1e-9, r));
 }
 
+// True SNR for raw sEMG: compare active window RMS to rest baseline RMS.
+// Both inputs are baseline-centered mV samples.
+export function snrFromBaseline(active: number[], baseline: number[]): number {
+  const sigRms = rms(active);
+  const noiseRms = rms(baseline);
+  if (noiseRms <= 1e-9) return sigRms > 0 ? 60 : 0;
+  return 20 * Math.log10(sigRms / noiseRms);
+}
+
+// Sliding-window RMS envelope (window in samples).
+export function rmsEnvelope(a: number[], window: number): number[] {
+  const N = a.length;
+  const w = Math.max(2, Math.floor(window));
+  const out = new Array<number>(N);
+  let acc = 0;
+  for (let i = 0; i < N; i++) {
+    acc += a[i] * a[i];
+    if (i >= w) acc -= a[i - w] * a[i - w];
+    const denom = Math.min(i + 1, w);
+    out[i] = Math.sqrt(acc / denom);
+  }
+  return out;
+}
+
+export function sliceByTime(ds: EmgDataset, t0: number, t1: number): EmgSample[] {
+  return ds.samples.filter((s) => s.t >= t0 && s.t < t1);
+}
+
+// Quality grade for raw EMG using rest-vs-active SNR (dB).
+export function qualityFromSnr(snrDb: number): {
+  score: number;
+  label: "EXCELLENT" | "GOOD" | "FAIR" | "POOR";
+  snrDb: number;
+} {
+  // Map 0..30 dB → 0..100. Typical good sEMG sits at 15–25 dB above rest.
+  const clamped = Math.max(0, Math.min(30, snrDb));
+  const score = Math.round((clamped / 30) * 100);
+  const label = score >= 75 ? "EXCELLENT" : score >= 50 ? "GOOD" : score >= 25 ? "FAIR" : "POOR";
+  return { score, label, snrDb };
+}
+
+
+
 // ---------- FFT (iterative radix-2 Cooley-Tukey) ----------
 function nextPow2(n: number): number {
   let p = 1;
