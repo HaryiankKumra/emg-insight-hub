@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { GoogleGenAI } from "@google/genai";
 
 export interface ChannelSummary {
   channel: string;
@@ -54,38 +55,22 @@ Give a concise expert report in markdown with these sections:
 Be specific: call out the strongest and weakest channels by name, flag suspected electrode lift / motion artifact / powerline noise (50/60 Hz) if frequencies/quality suggest it, note expected sEMG band is 20–450 Hz with dominant power 50–150 Hz, and suggest concrete fixes. Keep under ~250 words.`;
 
     if (geminiKey) {
-      // Use official Gemini API directly
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+      // Use official Google Gen AI SDK
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: prompt,
+          config: {
+            systemInstruction: "You are a precise biomedical signal-processing assistant.",
+            maxOutputTokens: 800,
           },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: "user",
-                parts: [{ text: prompt }],
-              },
-            ],
-            systemInstruction: {
-              parts: [{ text: "You are a precise biomedical signal-processing assistant." }],
-            },
-            generationConfig: {
-              maxOutputTokens: 800,
-            },
-          }),
-        },
-      );
-
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(`Gemini API error ${res.status}: ${t.slice(0, 200)}`);
+        });
+        const text = response.text ?? "(no response)";
+        return { text };
+      } catch (err) {
+        throw new Error(`Gemini SDK error: ${err instanceof Error ? err.message : String(err)}`);
       }
-      const json = await res.json();
-      const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "(no response)";
-      return { text };
     } else {
       // Fallback to Lovable gateway
       const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {

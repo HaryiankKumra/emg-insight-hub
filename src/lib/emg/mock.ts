@@ -34,11 +34,11 @@ export function generateMockDataset(opts?: {
     samples[i] = { t, ch1, ch2, ch3, ch4 };
   }
   return {
-    id: `mock-${Date.now()}`,
+    id: "mock-leg-dataset-demo",
     name: "Synthetic Demo — 4ch × 10s",
     sampleRate,
     samples,
-    uploadedAt: Date.now(),
+    uploadedAt: 1718928000000,
     source: "mock",
   };
 }

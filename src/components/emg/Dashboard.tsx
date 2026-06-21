@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   Upload,
@@ -107,7 +107,16 @@ function Shell() {
 /* ===================== Chrome ===================== */
 
 function TopBar({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: () => void }) {
-  const time = new Date().toLocaleTimeString("en-GB", { hour12: false });
+  const [time, setTime] = useState<string>("");
+
+  useEffect(() => {
+    setTime(new Date().toLocaleTimeString("en-GB", { hour12: false }));
+    const timer = setInterval(() => {
+      setTime(new Date().toLocaleTimeString("en-GB", { hour12: false }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <header className="border-b border-border bg-card/60 backdrop-blur px-3 py-2 flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -127,7 +136,7 @@ function TopBar({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: 
           LINK OK
         </span>
         <span className="hidden md:inline">CH:4</span>
-        <span>{time} UTC</span>
+        <span>{time || "--:--:--"} UTC</span>
         <button
           onClick={toggleTheme}
           className="size-7 grid place-items-center rounded-sm border border-border hover:border-primary/60"
