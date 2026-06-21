@@ -117,27 +117,33 @@ export function calculateQualityFromRaw(
   };
 
   // ADAPTIVE: Detect actual quiet periods (baseline) using RMS envelope
-  const { quietPeriods, activePeriods } = detectActivityPeriods(tempDs, channels, 100, 25);
-
-  // If no clear quiet periods, fallback to first-1/3 heuristic
   let baselineIndices: number[] = [];
-  if (quietPeriods.length > 0) {
-    // Use samples from first quiet period for baseline (most likely rest)
-    baselineIndices = quietPeriods[0].indices;
-  } else {
-    // Fallback: use first 1/3
-    baselineIndices = usableSamples.map((_, i) => i).slice(0, Math.ceil(usableSamples.length / 3));
+  let activeIndices: number[] = [];
+
+  try {
+    const { quietPeriods, activePeriods } = detectActivityPeriods(tempDs, channels, 100, 25);
+
+    // If quiet periods found, use first one for baseline
+    if (quietPeriods.length > 0 && quietPeriods[0].indices.length > 10) {
+      baselineIndices = quietPeriods[0].indices;
+    }
+
+    // If active periods found, use all of them
+    if (activePeriods.length > 0) {
+      for (const period of activePeriods) {
+        activeIndices.push(...period.indices);
+      }
+    }
+  } catch (err) {
+    // Fallback if activity detection fails
+    console.warn("Activity detection failed, using fallback baseline");
   }
 
-  // If no clear active periods, fallback to last-2/3 heuristic
-  let activeIndices: number[] = [];
-  if (activePeriods.length > 0) {
-    // Combine all active periods
-    for (const period of activePeriods) {
-      activeIndices.push(...period.indices);
-    }
-  } else {
-    // Fallback: use last 2/3
+  // Fallback to first-1/3 / last-2/3 if activity detection didn't work
+  if (baselineIndices.length === 0) {
+    baselineIndices = usableSamples.map((_, i) => i).slice(0, Math.ceil(usableSamples.length / 3));
+  }
+  if (activeIndices.length === 0) {
     const start = Math.ceil(usableSamples.length / 3);
     activeIndices = usableSamples.map((_, i) => i).slice(start);
   }
@@ -514,16 +520,9 @@ export function createNotch(f0: number, fs: number, q = 10): BiquadFilter {
 // Processes a complete dataset through the filter pipeline
 // Processes a complete dataset through the filter pipeline
 // Options: skipFirstSecs = skip first N seconds (default 2 for filter warm-up + startup transients)
-export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2, removeOutliers = true): EmgDataset {
+export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2): EmgDataset {
   const fs = ds.sampleRate;
   const skipSamples = Math.floor(skipFirstSecs * fs);
-
-  // OPTIONAL: Remove outliers first (aggressive for MyoWare: threshold = 3.0)
-  let processingSamples = ds.samples;
-  if (removeOutliers) {
-    const outlierIndices = new Set(detectOutliers(ds.samples, CHANNELS, 3.0)); // More aggressive
-    processingSamples = ds.samples.filter((_, idx) => !outlierIndices.has(idx));
-  }
 
   // Create unique filter pipelines for each channel
   const createPipeline = () => {
@@ -554,8 +553,8 @@ export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2, removeOutli
   };
 
   // Warm-up phase: process first N samples but discard them
-  for (let i = 0; i < warmupSamples && i < processingSamples.length; i++) {
-    const s = processingSamples[i];
+  for (let i = 0; i < warmupSamples && i < ds.samples.length; i++) {
+    const s = ds.samples[i];
     processCh(s.ch1, pipelines.ch1);
     processCh(s.ch2, pipelines.ch2);
     processCh(s.ch3, pipelines.ch3);
@@ -563,7 +562,7 @@ export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2, removeOutli
   }
 
   // Process all samples (now filters have settled, no transient)
-  const processedSamples = processingSamples
+  const processedSamples = ds.samples
     .map((s, idx) => {
       return {
         t: s.t,
