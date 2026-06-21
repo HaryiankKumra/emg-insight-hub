@@ -565,14 +565,13 @@ function OverviewView() {
               </div>
               <div className="mt-1.5 grid grid-cols-2 gap-1 text-[10px] text-muted-foreground tabular-nums">
                 <span>Reps: {m.q.repCount}</span>
-                <span className="text-right">Consistency: {m.q.peakConsistency}%</span>
+                <span className="text-right">Consistency: {m.q.repConsistency}%</span>
               </div>
-              <div className="mt-1 grid grid-cols-2 gap-1 text-[10px] text-muted-foreground tabular-nums">
-                <span>Anomalies: {m.q.peakOutlierRatio.toFixed(1)}%</span>
-                <span className="text-right">SNR: {m.q.snrDb.toFixed(1)} dB</span>
+              <div className="mt-1 text-[10px] text-primary/70 break-words">
+                SNR: {m.q.snrDb.toFixed(1)} dB | {m.q.qualityBasis}
               </div>
-              <div className="mt-1 text-[9px] text-primary/70 break-words">
-                {m.q.qualityBasis}
+              <div className="mt-1 text-[9px] text-muted-foreground/60 break-words">
+                {m.q.details}
               </div>
             </div>
           ))}
@@ -643,8 +642,7 @@ type OverviewMetric = {
     label: string;
     snrDb: number;
     repCount: number;
-    peakConsistency: number;
-    peakOutlierRatio: number;
+    repConsistency: number;
     qualityBasis: string;
     details: string;
   };

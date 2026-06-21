@@ -80,7 +80,194 @@ export function snr(a: number[]): number {
   return 10 * Math.log10(Math.max(1e-9, r));
 }
 
-// ========== EMG-SPECIFIC QUALITY ASSESSMENT (Peak-Based) ==========
+// ========== EMG-SPECIFIC QUALITY ASSESSMENT (Rep-Window Based) ==========
+
+// Detect contiguous activation windows (reps), not individual peaks
+// A rep = one continuous period of muscle activity, regardless of multiple peaks
+export function detectActivationWindows(
+  signal: number[],
+  sampleRate: number,
+  rmsWindowMs: number = 50, // RMS averaging window (50ms)
+  activationThresholdPercentile: number = 40, // Activations above 40th percentile RMS
+  minWindowDurationMs: number = 100, // Minimum rep duration (100ms)
+  minGapBetweenRepsMs: number = 300, // Minimum gap between reps to be separate (300ms)
+): {
+  windows: Array<{ startIdx: number; endIdx: number; peakRms: number; duration: number }>;
+  threshold: number;
+  details: string;
+} {
+  // Step 1: Compute RMS envelope
+  const rmsWindowSamples = Math.max(1, Math.floor((rmsWindowMs / 1000) * sampleRate));
+  const rmsEnv: number[] = [];
+
+  for (let i = 0; i < signal.length; i++) {
+    let sumSq = 0;
+    let count = 0;
+    for (let j = Math.max(0, i - rmsWindowSamples); j <= Math.min(signal.length - 1, i + rmsWindowSamples); j++) {
+      sumSq += signal[j] * signal[j];
+      count++;
+    }
+    rmsEnv.push(Math.sqrt(sumSq / count));
+  }
+
+  // Step 2: Find activation threshold
+  const sorted = [...rmsEnv].sort((a, b) => a - b);
+  const threshold = sorted[Math.floor(sorted.length * (activationThresholdPercentile / 100))];
+
+  // Step 3: Detect windows (contiguous regions above threshold)
+  const minWindowSamples = Math.floor((minWindowDurationMs / 1000) * sampleRate);
+  const minGapSamples = Math.floor((minGapBetweenRepsMs / 1000) * sampleRate);
+
+  const windows: Array<{ startIdx: number; endIdx: number; peakRms: number; duration: number }> = [];
+  let inWindow = false;
+  let windowStart = 0;
+  let maxRmsInWindow = 0;
+
+  for (let i = 0; i < rmsEnv.length; i++) {
+    const isActive = rmsEnv[i] > threshold;
+
+    if (isActive && !inWindow) {
+      // Start new window
+      windowStart = i;
+      maxRmsInWindow = rmsEnv[i];
+      inWindow = true;
+    } else if (isActive && inWindow) {
+      // Continue window
+      maxRmsInWindow = Math.max(maxRmsInWindow, rmsEnv[i]);
+    } else if (!isActive && inWindow) {
+      // End window
+      const windowLength = i - windowStart;
+      if (windowLength >= minWindowSamples) {
+        // Merge with previous window if gap too small
+        if (
+          windows.length > 0 &&
+          windowStart - windows[windows.length - 1].endIdx < minGapSamples
+        ) {
+          // Merge: extend previous window
+          windows[windows.length - 1].endIdx = i;
+          windows[windows.length - 1].peakRms = Math.max(
+            windows[windows.length - 1].peakRms,
+            maxRmsInWindow,
+          );
+          windows[windows.length - 1].duration = windows[windows.length - 1].endIdx - windows[windows.length - 1].startIdx;
+        } else {
+          // Add new window
+          windows.push({
+            startIdx: windowStart,
+            endIdx: i,
+            peakRms: maxRmsInWindow,
+            duration: windowLength,
+          });
+        }
+      }
+      inWindow = false;
+      maxRmsInWindow = 0;
+    }
+  }
+
+  // Handle window at end of signal
+  if (inWindow && rmsEnv.length - windowStart >= minWindowSamples) {
+    if (
+      windows.length > 0 &&
+      windowStart - windows[windows.length - 1].endIdx < minGapSamples
+    ) {
+      windows[windows.length - 1].endIdx = rmsEnv.length;
+      windows[windows.length - 1].peakRms = Math.max(windows[windows.length - 1].peakRms, maxRmsInWindow);
+      windows[windows.length - 1].duration = windows[windows.length - 1].endIdx - windows[windows.length - 1].startIdx;
+    } else {
+      windows.push({
+        startIdx: windowStart,
+        endIdx: rmsEnv.length,
+        peakRms: maxRmsInWindow,
+        duration: rmsEnv.length - windowStart,
+      });
+    }
+  }
+
+  return {
+    windows,
+    threshold,
+    details: `${windows.length} activation windows detected (threshold: ${threshold.toFixed(3)})`,
+  };
+}
+
+// Assess EMG signal quality based on activation windows (reps)
+// Returns: rep count (actual movement reps), window consistency, quality grade
+export function assessEmgSignalQuality(
+  signal: number[],
+  sampleRate: number,
+  minRepDistance: number = 500, // Min ms between reps (default 500ms for controlled exercises)
+): {
+  repCount: number;
+  windowDurations: number[]; // Duration of each rep window (ms)
+  repConsistency: number; // 0-100: how similar are rep durations?
+  quality: string; // "EXCELLENT" | "GOOD" | "FAIR" | "POOR"
+  score: number; // 0-100
+  details: string;
+} {
+  // Detect activation windows (each window = 1 rep)
+  const { windows, threshold, details: winDetails } = detectActivationWindows(
+    signal,
+    sampleRate,
+    50, // RMS window
+    40, // Percentile for activation threshold
+    100, // Min window duration (100ms)
+    minRepDistance, // Gap between windows = gap between reps
+  );
+
+  if (windows.length === 0) {
+    return {
+      repCount: 0,
+      windowDurations: [],
+      repConsistency: 0,
+      quality: "POOR",
+      score: 0,
+      details: "No muscle activations detected",
+    };
+  }
+
+  // Convert window durations to milliseconds
+  const windowDurationsMs = windows.map((w) => (w.duration / sampleRate) * 1000);
+
+  // Calculate consistency of window durations (how similar are the reps?)
+  const durationMean = mean(windowDurationsMs);
+  const durationStd = Math.sqrt(variance(windowDurationsMs));
+  const repConsistency = durationStd > 0 ? Math.max(0, 100 - (durationStd / durationMean) * 100) : 100;
+
+  // Quality grading based on rep count and consistency
+  let quality: string;
+  let score: number;
+
+  // Heuristic: more reps with higher consistency = better
+  const consistency = Math.max(0, repConsistency);
+  const repScore = Math.min(100, windows.length * 10); // Up to 10 reps = 100%
+
+  if (consistency > 70 && windows.length >= 8) {
+    quality = "EXCELLENT";
+    score = 90 + Math.floor((consistency / 100) * 10);
+  } else if (consistency > 60 && windows.length >= 5) {
+    quality = "GOOD";
+    score = 70 + Math.floor((consistency / 100) * 20);
+  } else if (consistency > 40 && windows.length >= 2) {
+    quality = "FAIR";
+    score = 50 + Math.floor((consistency / 100) * 20);
+  } else if (windows.length >= 1) {
+    quality = "FAIR";
+    score = Math.floor((consistency / 100) * 50);
+  } else {
+    quality = "POOR";
+    score = 0;
+  }
+
+  return {
+    repCount: windows.length,
+    windowDurations: windowDurationsMs,
+    repConsistency: consistency,
+    quality,
+    score: Math.round(score),
+    details: `${windows.length} reps | Avg duration: ${durationMean.toFixed(0)}ms | Consistency: ${consistency.toFixed(0)}%`,
+  };
+}
 
 // Find local maxima (peaks = muscle activation events)
 // Peaks represent motor unit activation
@@ -140,86 +327,6 @@ export function filterOutlierPeaks(
   return { cleanPeaks, outlierPeaks };
 }
 
-// Assess EMG signal quality based on peak characteristics
-// Returns: rep count, peak consistency, quality grade
-export function assessEmgSignalQuality(
-  signal: number[],
-  sampleRate: number,
-  minRepDistance: number = 500, // Min ms between reps (default 500ms for controlled exercises)
-): {
-  repCount: number;
-  peakHeights: number[];
-  peakConsistency: number; // 0-100: how similar are peaks?
-  peakOutlierRatio: number; // 0-100: percentage of outlier peaks
-  quality: string; // "EXCELLENT" | "GOOD" | "FAIR" | "POOR"
-  score: number; // 0-100
-  details: string;
-} {
-  // Step 1: Detect all peaks
-  const minDistance = Math.floor((minRepDistance / 1000) * sampleRate);
-  const threshold = mean(signal); // Peaks above mean
-  const allPeaks = findLocalMaxima(signal, minDistance, threshold);
-
-  if (allPeaks.length === 0) {
-    return {
-      repCount: 0,
-      peakHeights: [],
-      peakConsistency: 0,
-      peakOutlierRatio: 0,
-      quality: "POOR",
-      score: 0,
-      details: "No muscle activations detected",
-    };
-  }
-
-  // Step 2: Filter outlier peaks
-  const { cleanPeaks, outlierPeaks } = filterOutlierPeaks(signal, allPeaks, 2.5);
-
-  // Step 3: Calculate consistency of clean peaks
-  const cleanHeights = cleanPeaks.map((idx) => signal[idx]);
-  const heightMean = mean(cleanHeights);
-  const heightStd = Math.sqrt(variance(cleanHeights));
-  const peakConsistency = heightStd > 0 ? Math.max(0, 100 - (heightStd / heightMean) * 100) : 100;
-
-  // Step 4: Outlier ratio
-  const peakOutlierRatio =
-    allPeaks.length > 0 ? (outlierPeaks.length / allPeaks.length) * 100 : 0;
-
-  // Step 5: Determine quality grade
-  let quality: string;
-  let score: number;
-
-  const consistency = Math.max(0, peakConsistency);
-  const anomalyPct = Math.min(100, peakOutlierRatio);
-
-  // Quality logic: Consistency + Low anomalies = GOOD
-  if (consistency > 70 && anomalyPct < 15) {
-    quality = "EXCELLENT";
-    score = 90 + Math.floor((consistency / 100) * 10);
-  } else if (consistency > 60 && anomalyPct < 25) {
-    quality = "GOOD";
-    score = 70 + Math.floor((consistency / 100) * 20);
-  } else if (consistency > 40 && anomalyPct < 40) {
-    quality = "FAIR";
-    score = 50 + Math.floor((consistency / 100) * 20);
-  } else {
-    quality = "POOR";
-    score = Math.floor((consistency / 100) * 50);
-  }
-
-  const details = `${cleanPeaks.length} reps detected (${outlierPeaks.length} anomalies). Consistency: ${consistency.toFixed(1)}% | Anomalies: ${anomalyPct.toFixed(1)}%`;
-
-  return {
-    repCount: cleanPeaks.length,
-    peakHeights: cleanHeights,
-    peakConsistency: consistency,
-    peakOutlierRatio: anomalyPct,
-    quality,
-    score: Math.round(score),
-    details,
-  };
-}
-
 // True SNR for raw sEMG: compare active window RMS to rest baseline RMS.
 // Both inputs are baseline-centered mV samples.
 export function snrFromBaseline(active: number[], baseline: number[]): number {
@@ -231,8 +338,7 @@ export function snrFromBaseline(active: number[], baseline: number[]): number {
 
 // Calculate quality from RAW (unfiltered) dataset using ADAPTIVE baseline detection
 // For MyoWare 2.0: finds actual quiet/rest periods, not pre-decided baseline
-// ALSO uses peak-based quality assessment (rep counting, consistency)
-// This avoids high-pass filter artifacts and gives proper EMG assessment
+// Uses activation WINDOWS (reps) not individual peaks - accounts for multi-phase movements
 export function calculateQualityFromRaw(
   rawDs: EmgDataset,
   channels: Channel[] = CHANNELS,
@@ -244,9 +350,8 @@ export function calculateQualityFromRaw(
     label: string;
     score: number;
     repCount: number;
-    peakConsistency: number;
-    peakOutlierRatio: number;
-    qualityBasis: string; // Which metric was used
+    repConsistency: number;
+    qualityBasis: string;
     details: string;
   }
 > {
@@ -260,8 +365,7 @@ export function calculateQualityFromRaw(
       label: "POOR",
       score: 0,
       repCount: 0,
-      peakConsistency: 0,
-      peakOutlierRatio: 0,
+      repConsistency: 0,
       qualityBasis: "No data",
       details: "Insufficient samples",
     };
@@ -318,8 +422,7 @@ export function calculateQualityFromRaw(
       label: "POOR",
       score: 0,
       repCount: 0,
-      peakConsistency: 0,
-      peakOutlierRatio: 0,
+      repConsistency: 0,
       qualityBasis: "Failed detection",
       details: "Could not segment baseline/active",
     };
@@ -338,8 +441,7 @@ export function calculateQualityFromRaw(
       label: string;
       score: number;
       repCount: number;
-      peakConsistency: number;
-      peakOutlierRatio: number;
+      repConsistency: number;
       qualityBasis: string;
       details: string;
     }
@@ -349,8 +451,7 @@ export function calculateQualityFromRaw(
       label: "POOR",
       score: 0,
       repCount: 0,
-      peakConsistency: 0,
-      peakOutlierRatio: 0,
+      repConsistency: 0,
       qualityBasis: "N/A",
       details: "Not calculated",
     },
@@ -359,8 +460,7 @@ export function calculateQualityFromRaw(
       label: "POOR",
       score: 0,
       repCount: 0,
-      peakConsistency: 0,
-      peakOutlierRatio: 0,
+      repConsistency: 0,
       qualityBasis: "N/A",
       details: "Not calculated",
     },
@@ -369,8 +469,7 @@ export function calculateQualityFromRaw(
       label: "POOR",
       score: 0,
       repCount: 0,
-      peakConsistency: 0,
-      peakOutlierRatio: 0,
+      repConsistency: 0,
       qualityBasis: "N/A",
       details: "Not calculated",
     },
@@ -379,8 +478,7 @@ export function calculateQualityFromRaw(
       label: "POOR",
       score: 0,
       repCount: 0,
-      peakConsistency: 0,
-      peakOutlierRatio: 0,
+      repConsistency: 0,
       qualityBasis: "N/A",
       details: "Not calculated",
     },
@@ -394,42 +492,31 @@ export function calculateQualityFromRaw(
     const snrDb = snrFromBaseline(activeValues, baselineValues);
     const snrGrade = qualityFromSnr(snrDb);
 
-    // Metric 2: Peak-based quality (rep counting, consistency, outliers)
-    const peakQuality = assessEmgSignalQuality(activeValues, fs, 500);
+    // Metric 2: Rep-window based quality (counts actual reps, not peaks)
+    const repQuality = assessEmgSignalQuality(activeValues, fs, 500);
 
-    // COMBINED ASSESSMENT: Prefer peak-based (more physiologically relevant)
-    // But use SNR as a sanity check
-    let finalLabel: string = peakQuality.quality;
-    let finalScore: number = peakQuality.score;
-    let qualityBasis: string;
+    // COMBINED ASSESSMENT: Use rep-window assessment (more physiologically accurate)
+    let finalLabel: string = repQuality.quality;
+    let finalScore: number = repQuality.score;
 
-    // If SNR is very low but peaks are detected, trust peaks
-    // If SNR is good and peaks are detected, confirm GOOD
-    if (peakQuality.repCount > 0) {
-      // Peaks detected = likely good signal
-      qualityBasis = `PEAK-BASED (${peakQuality.repCount} reps detected)`;
-      // SNR as validation: if SNR very low but peaks found, downgrade slightly
-      if (snrDb < 5) {
-        finalScore = Math.max(30, finalScore - 10);
-      } else if (snrDb < 10) {
-        // OK, downgrade a bit
-      }
+    // If reps detected, trust the rep count and consistency
+    if (repQuality.repCount > 0) {
+      finalLabel = repQuality.quality;
+      finalScore = repQuality.score;
     } else {
-      // No peaks detected = use SNR-based assessment
+      // No reps detected = use SNR-based assessment as fallback
       finalLabel = snrGrade.label;
       finalScore = snrGrade.score;
-      qualityBasis = "SNR-based (no peaks found)";
     }
 
     result[ch] = {
       snrDb,
       label: finalLabel,
       score: finalScore,
-      repCount: peakQuality.repCount,
-      peakConsistency: Math.round(peakQuality.peakConsistency),
-      peakOutlierRatio: Math.round(peakQuality.peakOutlierRatio),
-      qualityBasis,
-      details: peakQuality.details,
+      repCount: repQuality.repCount,
+      repConsistency: Math.round(repQuality.repConsistency),
+      qualityBasis: repQuality.repCount > 0 ? "REP-WINDOW" : "SNR-based",
+      details: repQuality.details,
     };
   }
 
