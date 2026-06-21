@@ -115,7 +115,9 @@ function TopBar({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: 
           <Radio className="size-4" />
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-bold tracking-widest text-primary text-glow-green">EMG//SCOPE</span>
+          <span className="text-sm font-bold tracking-widest text-primary text-glow-green">
+            EMG//SCOPE
+          </span>
           <span className="text-[10px] text-muted-foreground">v2.6.20 · MyoWare 2.0 · ESP32</span>
         </div>
       </div>
@@ -139,11 +141,15 @@ function TopBar({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: 
 }
 
 function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) {
-  const { baselineSec, setBaselineSec, active } = useEmgStore();
-  const maxBase = active ? Math.max(5, Math.floor(active.samples.length / active.sampleRate) - 1) : 120;
+  const { baselineSec, setBaselineSec, active, dspEnabled, setDspEnabled } = useEmgStore();
+  const maxBase = active
+    ? Math.max(5, Math.floor(active.samples.length / active.sampleRate) - 1)
+    : 120;
   return (
     <aside className="w-44 shrink-0 border-r border-border bg-sidebar/60 p-2 hidden md:flex flex-col gap-1">
-      <div className="px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Modules</div>
+      <div className="px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        Modules
+      </div>
       {NAV.map((n) => {
         const Icon = n.icon;
         const isActive = view === n.id;
@@ -183,7 +189,33 @@ function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) 
           />
           <div className="text-[9px] opacity-70">rest window for SNR</div>
         </div>
-        <div className="flex items-center gap-1.5"><Cpu className="size-3" /> SR · {active?.sampleRate ?? 1000} Hz</div>
+
+        <div className="border-t border-border/60 pt-2 mt-1">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={dspEnabled}
+              onChange={(e) => setDspEnabled(e.target.checked)}
+              className="accent-primary size-3 rounded border-border"
+            />
+            <span className="uppercase tracking-wider font-semibold text-[9px]">DSP Filtering</span>
+          </label>
+          <div className="text-[9px] text-muted-foreground mt-1 pl-5 space-y-0.5 opacity-90">
+            {dspEnabled ? (
+              <>
+                <div className="text-[var(--neon-green)]">• HPF: 20Hz (Drift)</div>
+                <div className="text-[var(--neon-cyan)]">• Notch: 50/60Hz</div>
+                <div className="text-[var(--neon-amber)]">• LPF: 450Hz</div>
+              </>
+            ) : (
+              <span className="text-destructive font-bold">● RAW UNFILTERED</span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 pt-1 border-t border-border/40">
+          <Cpu className="size-3" /> SR · {active?.sampleRate ?? 1000} Hz
+        </div>
         <div>FFT · 1024 · Hann</div>
       </div>
     </aside>
@@ -243,10 +275,13 @@ function Stat({
   tone?: "green" | "cyan" | "amber" | "magenta";
 }) {
   const toneCls =
-    tone === "cyan" ? "text-[var(--neon-cyan)] text-glow-cyan"
-    : tone === "amber" ? "text-[var(--neon-amber)] text-glow-amber"
-    : tone === "magenta" ? "text-[var(--neon-magenta)] text-glow-magenta"
-    : "text-primary text-glow-green";
+    tone === "cyan"
+      ? "text-[var(--neon-cyan)] text-glow-cyan"
+      : tone === "amber"
+        ? "text-[var(--neon-amber)] text-glow-amber"
+        : tone === "magenta"
+          ? "text-[var(--neon-magenta)] text-glow-magenta"
+          : "text-primary text-glow-green";
   return (
     <div className="border border-border rounded-sm p-2 bg-background/40">
       <div className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
@@ -286,7 +321,10 @@ function ScopeChart({
   const src = samples ?? ds.samples;
   const data = useMemo(() => downsample(src, maxPoints), [src, maxPoints]);
   return (
-    <div className="relative scope-grid rounded-sm border border-border overflow-hidden" style={{ height }}>
+    <div
+      className="relative scope-grid rounded-sm border border-border overflow-hidden"
+      style={{ height }}
+    >
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 8, right: 12, bottom: 8, left: 4 }}>
           <CartesianGrid stroke="var(--color-grid)" strokeDasharray="2 4" />
@@ -303,7 +341,13 @@ function ScopeChart({
             tick={{ fontSize: 10 }}
             width={42}
             tickFormatter={(v) => v.toFixed(1)}
-            label={{ value: "mV", angle: -90, position: "insideLeft", fontSize: 10, fill: "var(--color-muted-foreground)" }}
+            label={{
+              value: "mV",
+              angle: -90,
+              position: "insideLeft",
+              fontSize: 10,
+              fill: "var(--color-muted-foreground)",
+            }}
           />
           <Tooltip
             contentStyle={{
@@ -320,7 +364,12 @@ function ScopeChart({
               x={baselineSec}
               stroke="var(--neon-magenta)"
               strokeDasharray="4 3"
-              label={{ value: "EXERCISE →", position: "insideTopRight", fontSize: 10, fill: "var(--neon-magenta)" }}
+              label={{
+                value: "EXERCISE →",
+                position: "insideTopRight",
+                fontSize: 10,
+                fill: "var(--neon-magenta)",
+              }}
             />
           )}
           {channels.map((ch) => (
@@ -341,7 +390,15 @@ function ScopeChart({
   );
 }
 
-function EnvelopeChart({ ds, baselineSec, height = 220 }: { ds: EmgDataset; baselineSec: number; height?: number }) {
+function EnvelopeChart({
+  ds,
+  baselineSec,
+  height = 220,
+}: {
+  ds: EmgDataset;
+  baselineSec: number;
+  height?: number;
+}) {
   const data = useMemo(() => {
     const win = Math.max(20, Math.floor(ds.sampleRate * 0.1)); // 100ms window
     const envs = CHANNELS.map((ch) => rmsEnvelope(channelArray(ds, ch), win));
@@ -356,16 +413,56 @@ function EnvelopeChart({ ds, baselineSec, height = 220 }: { ds: EmgDataset; base
   }, [ds]);
 
   return (
-    <div className="relative scope-grid rounded-sm border border-border overflow-hidden" style={{ height }}>
+    <div
+      className="relative scope-grid rounded-sm border border-border overflow-hidden"
+      style={{ height }}
+    >
       <ResponsiveContainer>
         <LineChart data={data} margin={{ top: 8, right: 12, bottom: 8, left: 4 }}>
           <CartesianGrid stroke="var(--color-grid)" strokeDasharray="2 4" />
-          <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(v) => `${v.toFixed(1)}s`} stroke="var(--color-muted-foreground)" tick={{ fontSize: 10 }} />
-          <YAxis stroke="var(--color-muted-foreground)" tick={{ fontSize: 10 }} width={42} tickFormatter={(v) => v.toFixed(2)} label={{ value: "RMS mV", angle: -90, position: "insideLeft", fontSize: 10, fill: "var(--color-muted-foreground)" }} />
-          <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 11 }} formatter={(v: number) => `${v.toFixed(3)} mV`} />
-          {baselineSec > 0 && <ReferenceLine x={baselineSec} stroke="var(--neon-magenta)" strokeDasharray="4 3" />}
+          <XAxis
+            dataKey="t"
+            type="number"
+            domain={["dataMin", "dataMax"]}
+            tickFormatter={(v) => `${v.toFixed(1)}s`}
+            stroke="var(--color-muted-foreground)"
+            tick={{ fontSize: 10 }}
+          />
+          <YAxis
+            stroke="var(--color-muted-foreground)"
+            tick={{ fontSize: 10 }}
+            width={42}
+            tickFormatter={(v) => v.toFixed(2)}
+            label={{
+              value: "RMS mV",
+              angle: -90,
+              position: "insideLeft",
+              fontSize: 10,
+              fill: "var(--color-muted-foreground)",
+            }}
+          />
+          <Tooltip
+            contentStyle={{
+              background: "var(--color-popover)",
+              border: "1px solid var(--color-border)",
+              fontSize: 11,
+            }}
+            formatter={(v: number) => `${v.toFixed(3)} mV`}
+          />
+          {baselineSec > 0 && (
+            <ReferenceLine x={baselineSec} stroke="var(--neon-magenta)" strokeDasharray="4 3" />
+          )}
           {CHANNELS.map((ch) => (
-            <Line key={ch} type="monotone" dataKey={ch} stroke={CHANNEL_COLORS[ch]} dot={false} strokeWidth={1.4} isAnimationActive={false} name={CHANNEL_LABELS[ch]} />
+            <Line
+              key={ch}
+              type="monotone"
+              dataKey={ch}
+              stroke={CHANNEL_COLORS[ch]}
+              dot={false}
+              strokeWidth={1.4}
+              isAnimationActive={false}
+              name={CHANNEL_LABELS[ch]}
+            />
           ))}
           <Legend wrapperStyle={{ fontSize: 10 }} />
         </LineChart>
@@ -413,15 +510,29 @@ function OverviewView() {
         <Stat label="Sample Rate" value={active.sampleRate} unit="Hz" tone="cyan" />
         <Stat label="Total" value={totalSec.toFixed(1)} unit="s" tone="amber" />
         <Stat label="Rest" value={effBase.toFixed(0)} unit="s" />
-        <Stat label="Exercise" value={Math.max(0, totalSec - effBase).toFixed(1)} unit="s" tone="amber" />
-        <Stat label="Avg Quality" value={`${avgQ}%`} tone={avgQ >= 70 ? "green" : avgQ >= 40 ? "amber" : "magenta"} />
+        <Stat
+          label="Exercise"
+          value={Math.max(0, totalSec - effBase).toFixed(1)}
+          unit="s"
+          tone="amber"
+        />
+        <Stat
+          label="Avg Quality"
+          value={`${avgQ}%`}
+          tone={avgQ >= 70 ? "green" : avgQ >= 40 ? "amber" : "magenta"}
+        />
         <Stat label="Top Muscle" value={strongest?.ch.toUpperCase() ?? "—"} tone="magenta" />
       </div>
 
       <Panel
         title="Live Multi-Channel Scope · raw mV"
         className="col-span-12 lg:col-span-8"
-        right={<span className="text-[10px] text-muted-foreground"><span className="text-[var(--neon-magenta)]">▮</span> rest/exercise split @ {effBase.toFixed(0)}s</span>}
+        right={
+          <span className="text-[10px] text-muted-foreground">
+            <span className="text-[var(--neon-magenta)]">▮</span> rest/exercise split @{" "}
+            {effBase.toFixed(0)}s
+          </span>
+        }
       >
         <ScopeChart ds={active} height={280} baselineSec={effBase} />
       </Panel>
@@ -432,7 +543,10 @@ function OverviewView() {
             <div key={m.ch} className="border border-border rounded-sm p-2 bg-background/40">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="flex items-center gap-2">
-                  <span className="size-2 rounded-full" style={{ background: CHANNEL_COLORS[m.ch] }} />
+                  <span
+                    className="size-2 rounded-full"
+                    style={{ background: CHANNEL_COLORS[m.ch] }}
+                  />
                   <span className="font-bold">{m.ch.toUpperCase()}</span>
                   <span className="text-muted-foreground">{CHANNEL_LABELS[m.ch]}</span>
                 </span>
@@ -441,7 +555,8 @@ function OverviewView() {
                     "px-1.5 py-0.5 rounded-sm border text-[9px] tracking-widest",
                     m.q.label === "EXCELLENT" && "border-primary/60 text-primary",
                     m.q.label === "GOOD" && "border-[var(--neon-cyan)]/50 text-[var(--neon-cyan)]",
-                    m.q.label === "FAIR" && "border-[var(--neon-amber)]/50 text-[var(--neon-amber)]",
+                    m.q.label === "FAIR" &&
+                      "border-[var(--neon-amber)]/50 text-[var(--neon-amber)]",
                     m.q.label === "POOR" && "border-destructive/60 text-destructive",
                   )}
                 >
@@ -449,7 +564,10 @@ function OverviewView() {
                 </span>
               </div>
               <div className="mt-1.5 h-1 bg-border rounded-sm overflow-hidden">
-                <div className="h-full" style={{ width: `${m.q.score}%`, background: CHANNEL_COLORS[m.ch] }} />
+                <div
+                  className="h-full"
+                  style={{ width: `${m.q.score}%`, background: CHANNEL_COLORS[m.ch] }}
+                />
               </div>
               <div className="mt-1.5 grid grid-cols-3 gap-1 text-[10px] text-muted-foreground tabular-nums">
                 <span>Rest {m.baseRms.toFixed(3)}</span>
@@ -492,7 +610,10 @@ function OverviewView() {
                 <tr key={m.ch} className="border-b border-border/50 hover:bg-accent/30">
                   <td className="p-2">
                     <span className="inline-flex items-center gap-2">
-                      <span className="size-2 rounded-full" style={{ background: CHANNEL_COLORS[m.ch] }} />
+                      <span
+                        className="size-2 rounded-full"
+                        style={{ background: CHANNEL_COLORS[m.ch] }}
+                      />
                       {m.ch.toUpperCase()} · {CHANNEL_LABELS[m.ch]}
                     </span>
                   </td>
@@ -547,7 +668,10 @@ function AiInsightsPanel({
       const totalSec = active.samples.length / active.sampleRate;
       const chSummaries = metrics.map((m) => {
         const arr = channelArray(active, m.ch).slice(Math.floor(baselineSec * active.sampleRate));
-        const { freq, mag } = fftMagnitude(arr.length ? arr : channelArray(active, m.ch), active.sampleRate);
+        const { freq, mag } = fftMagnitude(
+          arr.length ? arr : channelArray(active, m.ch),
+          active.sampleRate,
+        );
         const s = spectralMetrics(freq, mag);
         return {
           channel: m.ch.toUpperCase(),
@@ -582,7 +706,7 @@ function AiInsightsPanel({
 
   return (
     <Panel
-      title="AI Insights · Lovable AI"
+      title="AI Insights · EMG//SCOPE AI"
       className={className}
       right={
         <Button size="sm" onClick={run} disabled={busy}>
@@ -591,11 +715,15 @@ function AiInsightsPanel({
         </Button>
       }
     >
-      <div className="text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/90 overflow-auto" style={{ maxHeight: 320 }}>
+      <div
+        className="text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/90 overflow-auto"
+        style={{ maxHeight: 320 }}
+      >
         {err && <div className="text-destructive">{err}</div>}
         {!text && !err && !busy && (
           <div className="text-muted-foreground">
-            Sends summary stats (no raw signal) to Lovable AI for an expert review of signal quality, activation, and recommendations.
+            Sends summary stats (no raw signal) to EMG//SCOPE AI for an expert review of signal
+            quality, activation, and recommendations.
           </div>
         )}
         {busy && <div className="text-muted-foreground animate-pulse">Consulting model…</div>}
@@ -604,7 +732,6 @@ function AiInsightsPanel({
     </Panel>
   );
 }
-
 
 function UploadView() {
   const { addDataset } = useEmgStore();
@@ -642,14 +769,14 @@ function UploadView() {
           <Upload className="size-10 text-primary text-glow-green" />
           <p className="mt-3 text-sm">Drop CSV files here, or click to browse</p>
           <p className="text-[11px] text-muted-foreground mt-1">
-            Expected columns: <code>datetime_local, muscle1_raw_mV, muscle2_raw_mV, muscle3_raw_mV, muscle4_raw_mV</code>
-            <br />Comment lines starting with <code>#</code> and empty cells are handled automatically.
+            Expected columns:{" "}
+            <code>
+              datetime_local, muscle1_raw_mV, muscle2_raw_mV, muscle3_raw_mV, muscle4_raw_mV
+            </code>
+            <br />
+            Comment lines starting with <code>#</code> and empty cells are handled automatically.
           </p>
-          <Button
-            className="mt-4"
-            disabled={busy}
-            onClick={() => inputRef.current?.click()}
-          >
+          <Button className="mt-4" disabled={busy} onClick={() => inputRef.current?.click()}>
             {busy ? "Parsing…" : "Select files"}
           </Button>
           <input
@@ -668,12 +795,20 @@ function UploadView() {
         <div className="flex flex-col gap-2 text-[11px] text-muted-foreground">
           <div>• Raw mV EMG (AC, biased around VCC/2 on the sensor — DC removed here).</div>
           <div>• Channels baseline-centered (per-channel mean subtracted).</div>
-          <div>• Sample rate auto-detected from <code>datetime_local</code>.</div>
-          <div>• First <span className="text-primary">Baseline</span> seconds (sidebar slider, default 30 s) = <b>rest</b>; rest of the file = <b>exercise</b>.</div>
-          <div>• Quality / SNR = 20·log₁₀(RMS<sub>active</sub> / RMS<sub>rest</sub>).</div>
+          <div>
+            • Sample rate auto-detected from <code>datetime_local</code>.
+          </div>
+          <div>
+            • First <span className="text-primary">Baseline</span> seconds (sidebar slider, default
+            30 s) = <b>rest</b>; rest of the file = <b>exercise</b>.
+          </div>
+          <div>
+            • Quality / SNR = 20·log₁₀(RMS<sub>active</sub> / RMS<sub>rest</sub>).
+          </div>
           <div>• Activation envelope = 100 ms sliding RMS.</div>
           <div className="border-t border-border pt-2 mt-1 text-foreground/80">
-            Local processing only. Click <b>Analyze</b> to ship summary stats (no raw signal) to Lovable AI.
+            Local processing only. Click <b>Analyze</b> to ship summary stats (no raw signal) to
+            EMG//SCOPE AI.
           </div>
         </div>
       </Panel>
@@ -701,7 +836,11 @@ function SignalView() {
                 "px-2 py-1 text-[11px] rounded-sm border tracking-wider",
                 selected.includes(ch) ? "border-primary/60" : "border-border opacity-50",
               )}
-              style={selected.includes(ch) ? { color: CHANNEL_COLORS[ch], boxShadow: `0 0 8px ${CHANNEL_COLORS[ch]}` } : {}}
+              style={
+                selected.includes(ch)
+                  ? { color: CHANNEL_COLORS[ch], boxShadow: `0 0 8px ${CHANNEL_COLORS[ch]}` }
+                  : {}
+              }
             >
               ● {ch.toUpperCase()} · {CHANNEL_LABELS[ch]}
             </button>
@@ -714,7 +853,11 @@ function SignalView() {
       </Panel>
 
       {selected.map((ch) => (
-        <Panel key={ch} title={`${ch.toUpperCase()} · ${CHANNEL_LABELS[ch]}`} className="col-span-12 md:col-span-6">
+        <Panel
+          key={ch}
+          title={`${ch.toUpperCase()} · ${CHANNEL_LABELS[ch]}`}
+          className="col-span-12 md:col-span-6"
+        >
           <ScopeChart ds={active} channels={[ch]} height={180} maxPoints={1200} />
         </Panel>
       ))}
@@ -744,21 +887,39 @@ function FrequencyView() {
           {perCh.map((p) => (
             <div key={p.ch} className="border border-border rounded-sm p-2 bg-background/40">
               <div className="flex items-center gap-2 text-[11px]">
-                <span className="size-2 rounded-full" style={{ background: CHANNEL_COLORS[p.ch] }} />
+                <span
+                  className="size-2 rounded-full"
+                  style={{ background: CHANNEL_COLORS[p.ch] }}
+                />
                 <span className="font-bold">{p.ch.toUpperCase()}</span>
                 <span className="text-muted-foreground">{CHANNEL_LABELS[p.ch]}</span>
               </div>
               <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] tabular-nums">
-                <div><div className="text-muted-foreground">MEAN</div><div className="text-primary">{p.metrics.meanFreq.toFixed(1)}Hz</div></div>
-                <div><div className="text-muted-foreground">MED</div><div className="text-[var(--neon-cyan)]">{p.metrics.medianFreq.toFixed(1)}Hz</div></div>
-                <div><div className="text-muted-foreground">DOM</div><div className="text-[var(--neon-amber)]">{p.metrics.dominantFreq.toFixed(1)}Hz</div></div>
+                <div>
+                  <div className="text-muted-foreground">MEAN</div>
+                  <div className="text-primary">{p.metrics.meanFreq.toFixed(1)}Hz</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">MED</div>
+                  <div className="text-[var(--neon-cyan)]">{p.metrics.medianFreq.toFixed(1)}Hz</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">DOM</div>
+                  <div className="text-[var(--neon-amber)]">
+                    {p.metrics.dominantFreq.toFixed(1)}Hz
+                  </div>
+                </div>
               </div>
             </div>
           ))}
         </div>
       </Panel>
       {perCh.map((p) => (
-        <Panel key={p.ch} title={`FFT · ${p.ch.toUpperCase()}`} className="col-span-12 md:col-span-6">
+        <Panel
+          key={p.ch}
+          title={`FFT · ${p.ch.toUpperCase()}`}
+          className="col-span-12 md:col-span-6"
+        >
           <div style={{ height: 220 }}>
             <ResponsiveContainer>
               <AreaChart data={p.data} margin={{ top: 8, right: 12, bottom: 8, left: 4 }}>
@@ -769,15 +930,39 @@ function FrequencyView() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="var(--color-grid)" strokeDasharray="2 4" />
-                <XAxis dataKey="f" tickFormatter={(v) => `${Math.round(v)}`} stroke="var(--color-muted-foreground)" tick={{ fontSize: 10 }} />
+                <XAxis
+                  dataKey="f"
+                  tickFormatter={(v) => `${Math.round(v)}`}
+                  stroke="var(--color-muted-foreground)"
+                  tick={{ fontSize: 10 }}
+                />
                 <YAxis stroke="var(--color-muted-foreground)" tick={{ fontSize: 10 }} width={36} />
                 <Tooltip
-                  contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 11, borderRadius: 4 }}
+                  contentStyle={{
+                    background: "var(--color-popover)",
+                    border: "1px solid var(--color-border)",
+                    fontSize: 11,
+                    borderRadius: 4,
+                  }}
                   labelFormatter={(l) => `${Number(l).toFixed(1)} Hz`}
                 />
-                <ReferenceLine x={p.metrics.meanFreq} stroke="var(--neon-green)" strokeDasharray="3 3" />
-                <ReferenceLine x={p.metrics.medianFreq} stroke="var(--neon-cyan)" strokeDasharray="3 3" />
-                <Area type="monotone" dataKey="mag" stroke={CHANNEL_COLORS[p.ch]} fill={`url(#g-${p.ch})`} isAnimationActive={false} />
+                <ReferenceLine
+                  x={p.metrics.meanFreq}
+                  stroke="var(--neon-green)"
+                  strokeDasharray="3 3"
+                />
+                <ReferenceLine
+                  x={p.metrics.medianFreq}
+                  stroke="var(--neon-cyan)"
+                  strokeDasharray="3 3"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="mag"
+                  stroke={CHANNEL_COLORS[p.ch]}
+                  fill={`url(#g-${p.ch})`}
+                  isAnimationActive={false}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -833,7 +1018,13 @@ function CompareView() {
               <CartesianGrid stroke="var(--color-grid)" strokeDasharray="2 4" />
               <XAxis dataKey="ch" stroke="var(--color-muted-foreground)" tick={{ fontSize: 10 }} />
               <YAxis stroke="var(--color-muted-foreground)" tick={{ fontSize: 10 }} />
-              <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 11 }} />
+              <Tooltip
+                contentStyle={{
+                  background: "var(--color-popover)",
+                  border: "1px solid var(--color-border)",
+                  fontSize: 11,
+                }}
+              />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="A" fill="var(--neon-green)" />
               <Bar dataKey="B" fill="var(--neon-magenta)" />
@@ -843,11 +1034,23 @@ function CompareView() {
       </Panel>
       <Panel title="Per-Channel Summary" className="col-span-12">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] tabular-nums">
-          {[{ d: a, name: "A" }, { d: b, name: "B" }].map(({ d, name }) => (
+          {[
+            { d: a, name: "A" },
+            { d: b, name: "B" },
+          ].map(({ d, name }) => (
             <div key={name} className="border border-border rounded-sm p-2">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">{name} · {d?.name}</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+                {name} · {d?.name}
+              </div>
               <table className="w-full">
-                <thead className="text-[10px] text-muted-foreground"><tr><th className="text-left">CH</th><th className="text-right">RMS</th><th className="text-right">MAV</th><th className="text-right">Energy</th></tr></thead>
+                <thead className="text-[10px] text-muted-foreground">
+                  <tr>
+                    <th className="text-left">CH</th>
+                    <th className="text-right">RMS</th>
+                    <th className="text-right">MAV</th>
+                    <th className="text-right">Energy</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {summary(d).map((r) => (
                     <tr key={r.ch} className="border-t border-border/50">
@@ -886,7 +1089,9 @@ function DatasetPicker({
         onChange={(e) => onChange(e.target.value)}
       >
         {datasets.map((d) => (
-          <option key={d.id} value={d.id}>{d.name}</option>
+          <option key={d.id} value={d.id}>
+            {d.name}
+          </option>
         ))}
       </select>
     </label>
@@ -928,7 +1133,9 @@ function ExplorerView() {
               <td className="text-right p-2">{d.samples.length.toLocaleString()}</td>
               <td className="text-right p-2">{d.sampleRate}</td>
               <td className="text-right p-2">{(d.samples.length / d.sampleRate).toFixed(2)}s</td>
-              <td className="p-2 text-muted-foreground">{new Date(d.uploadedAt).toLocaleString()}</td>
+              <td className="p-2 text-muted-foreground">
+                {new Date(d.uploadedAt).toLocaleString()}
+              </td>
               <td className="p-2 text-right">
                 <button
                   onClick={() => removeDataset(d.id)}
@@ -941,7 +1148,11 @@ function ExplorerView() {
             </tr>
           ))}
           {!datasets.length && (
-            <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No datasets</td></tr>
+            <tr>
+              <td colSpan={7} className="p-6 text-center text-muted-foreground">
+                No datasets
+              </td>
+            </tr>
           )}
         </tbody>
       </table>
@@ -955,11 +1166,17 @@ function ReportView() {
   if (!active) return <EmptyState msg="No dataset loaded" />;
   const ds = active;
 
-
   const metrics = CHANNELS.map((ch) => {
     const arr = channelArray(active, ch);
     const { freq, mag } = fftMagnitude(arr, active.sampleRate);
-    return { ch, rms: rms(arr), mav: mav(arr), energy: energy(arr), q: qualityScore(arr), s: spectralMetrics(freq, mag) };
+    return {
+      ch,
+      rms: rms(arr),
+      mav: mav(arr),
+      energy: energy(arr),
+      q: qualityScore(arr),
+      s: spectralMetrics(freq, mag),
+    };
   });
 
   async function exportPdf() {
@@ -971,16 +1188,32 @@ function ReportView() {
     ]);
     const canvas = await html2canvas(el, { backgroundColor: "#0d121b", scale: 2 });
     const img = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({ orientation: "portrait", unit: "px", format: [canvas.width, canvas.height] });
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "px",
+      format: [canvas.width, canvas.height],
+    });
     pdf.addImage(img, "PNG", 0, 0, canvas.width, canvas.height);
     pdf.save(`emg-report-${ds.id}.pdf`);
   }
 
   function exportCsv() {
-    const head = "channel,rms,mav,energy,quality_score,quality_label,snr_db,mean_freq_hz,median_freq_hz,dominant_freq_hz\n";
+    const head =
+      "channel,rms,mav,energy,quality_score,quality_label,snr_db,mean_freq_hz,median_freq_hz,dominant_freq_hz\n";
     const rows = metrics
       .map((m) =>
-        [m.ch, m.rms, m.mav, m.energy, m.q.score, m.q.label, m.q.snrDb, m.s.meanFreq, m.s.medianFreq, m.s.dominantFreq]
+        [
+          m.ch,
+          m.rms,
+          m.mav,
+          m.energy,
+          m.q.score,
+          m.q.label,
+          m.q.snrDb,
+          m.s.meanFreq,
+          m.s.medianFreq,
+          m.s.dominantFreq,
+        ]
           .map((v) => (typeof v === "number" ? v.toFixed(4) : v))
           .join(","),
       )
@@ -1001,20 +1234,32 @@ function ReportView() {
         className="col-span-12"
         right={
           <div className="flex gap-2">
-            <Button size="sm" variant="secondary" onClick={exportCsv}><Download className="size-3.5 mr-1" /> CSV</Button>
-            <Button size="sm" onClick={exportPdf}><Download className="size-3.5 mr-1" /> PDF</Button>
+            <Button size="sm" variant="secondary" onClick={exportCsv}>
+              <Download className="size-3.5 mr-1" /> CSV
+            </Button>
+            <Button size="sm" onClick={exportPdf}>
+              <Download className="size-3.5 mr-1" /> PDF
+            </Button>
           </div>
         }
       >
-        <div ref={reportRef} className="p-4 bg-background border border-border rounded-sm space-y-4">
+        <div
+          ref={reportRef}
+          className="p-4 bg-background border border-border rounded-sm space-y-4"
+        >
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-lg font-bold text-primary text-glow-green">EMG ANALYSIS REPORT</div>
-              <div className="text-[11px] text-muted-foreground">{active.name} · generated {new Date().toLocaleString()}</div>
+              <div className="text-lg font-bold text-primary text-glow-green">
+                EMG ANALYSIS REPORT
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {active.name} · generated {new Date().toLocaleString()}
+              </div>
             </div>
             <div className="text-[10px] text-muted-foreground text-right">
-              MyoWare 2.0 · ESP32<br />
-              4 channels · {active.sampleRate} Hz · {(active.samples.length / active.sampleRate).toFixed(2)} s
+              MyoWare 2.0 · ESP32
+              <br />4 channels · {active.sampleRate} Hz ·{" "}
+              {(active.samples.length / active.sampleRate).toFixed(2)} s
             </div>
           </div>
           <ScopeChart ds={active} height={220} />
@@ -1034,11 +1279,15 @@ function ReportView() {
             <tbody>
               {metrics.map((m) => (
                 <tr key={m.ch} className="border-b border-border/40">
-                  <td className="p-2">{m.ch.toUpperCase()} · {CHANNEL_LABELS[m.ch]}</td>
+                  <td className="p-2">
+                    {m.ch.toUpperCase()} · {CHANNEL_LABELS[m.ch]}
+                  </td>
                   <td className="text-right p-2">{m.rms.toFixed(4)}</td>
                   <td className="text-right p-2">{m.mav.toFixed(4)}</td>
                   <td className="text-right p-2">{m.energy.toFixed(2)}</td>
-                  <td className="text-right p-2">{m.q.label} · {m.q.score}%</td>
+                  <td className="text-right p-2">
+                    {m.q.label} · {m.q.score}%
+                  </td>
                   <td className="text-right p-2">{m.s.meanFreq.toFixed(1)}</td>
                   <td className="text-right p-2">{m.s.medianFreq.toFixed(1)}</td>
                   <td className="text-right p-2">{m.s.dominantFreq.toFixed(1)}</td>

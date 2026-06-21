@@ -35,7 +35,7 @@ export async function parseCsvFile(file: File, fallbackSampleRate = 1000): Promi
             "t",
             "timestamp",
             "time_s",
-            "time_ms"
+            "time_ms",
           );
           const cKeys = [
             find("muscle1_raw_mv", "muscle1", "ch1", "channel1", "biceps", "emg1", "a0"),

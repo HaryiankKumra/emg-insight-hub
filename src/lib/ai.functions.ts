@@ -25,8 +25,12 @@ export interface AnalyzeInput {
 export const analyzeEmg = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => d as AnalyzeInput)
   .handler(async ({ data }) => {
-    const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("LOVABLE_API_KEY missing");
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const lovableKey = process.env.LOVABLE_API_KEY;
+
+    if (!geminiKey && !lovableKey) {
+      throw new Error("Missing API Key. Set GEMINI_API_KEY or LOVABLE_API_KEY in the environment.");
+    }
 
     const prompt = `You are a biomedical signal engineer reviewing surface EMG (sEMG) data captured from MyoWare 2.0 sensors on an ESP32 at ${data.sampleRate} Hz. Values are raw mV, baseline-centered.
 
@@ -49,28 +53,68 @@ Give a concise expert report in markdown with these sections:
 
 Be specific: call out the strongest and weakest channels by name, flag suspected electrode lift / motion artifact / powerline noise (50/60 Hz) if frequencies/quality suggest it, note expected sEMG band is 20–450 Hz with dominant power 50–150 Hz, and suggest concrete fixes. Keep under ~250 words.`;
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: "You are a precise biomedical signal-processing assistant." },
-          { role: "user", content: prompt },
-        ],
-      }),
-    });
+    if (geminiKey) {
+      // Use official Gemini API directly
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: prompt }],
+              },
+            ],
+            systemInstruction: {
+              parts: [{ text: "You are a precise biomedical signal-processing assistant." }],
+            },
+            generationConfig: {
+              maxOutputTokens: 800,
+            },
+          }),
+        },
+      );
 
-    if (!res.ok) {
-      const t = await res.text();
-      if (res.status === 429) throw new Error("AI rate limit — try again in a moment.");
-      if (res.status === 402) throw new Error("AI credits exhausted — add credits in workspace billing.");
-      throw new Error(`AI gateway error ${res.status}: ${t.slice(0, 200)}`);
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`Gemini API error ${res.status}: ${t.slice(0, 200)}`);
+      }
+      const json = await res.json();
+      const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "(no response)";
+      return { text };
+    } else {
+      // Fallback to Lovable gateway
+      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${lovableKey}`,
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            {
+              role: "system",
+              content: "You are a precise biomedical signal-processing assistant.",
+            },
+            { role: "user", content: prompt },
+          ],
+        }),
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        if (res.status === 429) throw new Error("AI rate limit — try again in a moment.");
+        if (res.status === 402)
+          throw new Error("AI credits exhausted — add credits in workspace billing.");
+        throw new Error(`AI gateway error ${res.status}: ${t.slice(0, 200)}`);
+      }
+      const json = await res.json();
+      const text: string = json.choices?.[0]?.message?.content ?? "(no response)";
+      return { text };
     }
-    const json = await res.json();
-    const text: string = json.choices?.[0]?.message?.content ?? "(no response)";
-    return { text };
   });

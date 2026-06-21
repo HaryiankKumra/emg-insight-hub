@@ -64,11 +64,11 @@
   --border: oklch(0.28 0.03 220 / 60%);
   --input: oklch(0.22 0.025 240);
   --ring: oklch(0.75 0.18 160);
-  --chart-1: oklch(0.85 0.22 145);   /* neon green */
-  --chart-2: oklch(0.78 0.16 200);   /* cyan */
-  --chart-3: oklch(0.82 0.18 70);    /* amber */
-  --chart-4: oklch(0.72 0.25 330);   /* magenta */
-  --chart-5: oklch(0.78 0.2 25);     /* red-orange */
+  --chart-1: oklch(0.85 0.22 145); /* neon green */
+  --chart-2: oklch(0.78 0.16 200); /* cyan */
+  --chart-3: oklch(0.82 0.18 70); /* amber */
+  --chart-4: oklch(0.72 0.25 330); /* magenta */
+  --chart-5: oklch(0.78 0.2 25); /* red-orange */
   --grid: oklch(0.3 0.03 220 / 50%);
   --scope: oklch(0.11 0.02 240);
   --neon-green: oklch(0.88 0.24 145);
@@ -111,13 +111,25 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
-  html, body { background-color: var(--color-background); color: var(--color-foreground); }
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
   body {
     font-family: var(--font-mono);
     font-feature-settings: "tnum", "zero", "ss01";
   }
-  h1,h2,h3,h4 { font-family: var(--font-mono); letter-spacing: -0.01em; }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+  }
 }
 
 @layer utilities {
@@ -127,18 +139,30 @@
       linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
     background-size: 32px 32px;
   }
-  .glow-green { box-shadow: 0 0 12px oklch(0.85 0.22 145 / 35%); }
-  .text-glow-green { text-shadow: 0 0 8px oklch(0.85 0.22 145 / 60%); }
-  .text-glow-cyan { text-shadow: 0 0 8px oklch(0.82 0.18 200 / 60%); }
-  .text-glow-amber { text-shadow: 0 0 8px oklch(0.85 0.2 75 / 60%); }
-  .text-glow-magenta { text-shadow: 0 0 8px oklch(0.72 0.27 330 / 60%); }
+  .glow-green {
+    box-shadow: 0 0 12px oklch(0.85 0.22 145 / 35%);
+  }
+  .text-glow-green {
+    text-shadow: 0 0 8px oklch(0.85 0.22 145 / 60%);
+  }
+  .text-glow-cyan {
+    text-shadow: 0 0 8px oklch(0.82 0.18 200 / 60%);
+  }
+  .text-glow-amber {
+    text-shadow: 0 0 8px oklch(0.85 0.2 75 / 60%);
+  }
+  .text-glow-magenta {
+    text-shadow: 0 0 8px oklch(0.72 0.27 330 / 60%);
+  }
   .panel {
     background: var(--color-card);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
   }
   .panel-header {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 6px 10px;
     border-bottom: 1px solid var(--color-border);
     background: color-mix(in oklab, var(--color-card) 70%, var(--color-background));
@@ -147,14 +171,43 @@
     letter-spacing: 0.12em;
     color: var(--color-muted-foreground);
   }
-  .tick { color: var(--color-muted-foreground); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
-  .blink::after { content: "▮"; animation: blink 1s steps(2, start) infinite; margin-left: 4px; color: var(--color-primary); }
+  .tick {
+    color: var(--color-muted-foreground);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .blink::after {
+    content: "▮";
+    animation: blink 1s steps(2, start) infinite;
+    margin-left: 4px;
+    color: var(--color-primary);
+  }
 }
 
-@keyframes blink { to { visibility: hidden; } }
-@keyframes scan { 0% { transform: translateY(-100%);} 100% { transform: translateY(100%);} }
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+@keyframes scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
 .scanline::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(180deg, transparent 0%, oklch(0.85 0.22 145 / 6%) 50%, transparent 100%);
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    oklch(0.85 0.22 145 / 6%) 50%,
+    transparent 100%
+  );
   animation: scan 6s linear infinite;
 }

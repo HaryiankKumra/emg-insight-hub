@@ -12,4 +12,8 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Force Nitro to build for Vercel
+  nitro: {
+    preset: "vercel",
+  },
 });

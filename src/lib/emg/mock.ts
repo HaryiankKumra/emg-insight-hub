@@ -1,7 +1,11 @@
 import type { EmgDataset, EmgSample } from "./signal";
 
 // Synthesizes a realistic-looking sEMG burst pattern for 4 channels.
-export function generateMockDataset(opts?: { seconds?: number; sampleRate?: number; seed?: number }): EmgDataset {
+export function generateMockDataset(opts?: {
+  seconds?: number;
+  sampleRate?: number;
+  seed?: number;
+}): EmgDataset {
   const seconds = opts?.seconds ?? 10;
   const sampleRate = opts?.sampleRate ?? 1000;
   const n = seconds * sampleRate;

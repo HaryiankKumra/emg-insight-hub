@@ -3,10 +3,10 @@
 export type Channel = "ch1" | "ch2" | "ch3" | "ch4";
 export const CHANNELS: Channel[] = ["ch1", "ch2", "ch3", "ch4"];
 export const CHANNEL_LABELS: Record<Channel, string> = {
-  ch1: "MUSCLE 1",
-  ch2: "MUSCLE 2",
-  ch3: "MUSCLE 3",
-  ch4: "MUSCLE 4",
+  ch1: "Tibialis Anterior (TA)",
+  ch2: "Gastrocnemius (Calf)",
+  ch3: "Rectus Femoris (Quad)",
+  ch4: "Biceps Femoris (Hamstring)",
 };
 export const CHANNEL_COLORS: Record<Channel, string> = {
   ch1: "var(--neon-green)",
@@ -121,8 +121,6 @@ export function qualityFromSnr(snrDb: number): {
   return { score, label, snrDb };
 }
 
-
-
 // ---------- FFT (iterative radix-2 Cooley-Tukey) ----------
 function nextPow2(n: number): number {
   let p = 1;
@@ -130,7 +128,10 @@ function nextPow2(n: number): number {
   return p;
 }
 
-export function fftMagnitude(input: number[], sampleRate: number): { freq: number[]; mag: number[] } {
+export function fftMagnitude(
+  input: number[],
+  sampleRate: number,
+): { freq: number[]; mag: number[] } {
   const N = nextPow2(input.length);
   const re = new Float64Array(N);
   const im = new Float64Array(N);
@@ -235,4 +236,130 @@ export function downsample<T>(arr: T[], maxPoints: number): T[] {
 
 export function channelArray(ds: EmgDataset, ch: Channel): number[] {
   return ds.samples.map((s) => s[ch]);
+}
+
+// Biquad filter implementation for sEMG DSP processing
+export class BiquadFilter {
+  a1 = 0;
+  a2 = 0;
+  b0 = 1;
+  b1 = 0;
+  b2 = 0;
+
+  // State variables
+  x1 = 0;
+  x2 = 0;
+  y1 = 0;
+  y2 = 0;
+
+  constructor(b0: number, b1: number, b2: number, a1: number, a2: number) {
+    this.b0 = b0;
+    this.b1 = b1;
+    this.b2 = b2;
+    this.a1 = a1;
+    this.a2 = a2;
+  }
+
+  process(x: number): number {
+    const y =
+      this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
+    this.x2 = this.x1;
+    this.x1 = x;
+    this.y2 = this.y1;
+    this.y1 = y;
+    return y;
+  }
+}
+
+// High-pass filter coefficients (2nd order Butterworth)
+export function createHighPass(fc: number, fs: number): BiquadFilter {
+  const tan = Math.tan((Math.PI * fc) / fs);
+  const c = tan * tan;
+  const sqrt2 = Math.sqrt(2);
+  const denom = 1 + sqrt2 * tan + c;
+
+  const b0 = 1 / denom;
+  const b1 = -2 / denom;
+  const b2 = 1 / denom;
+  const a1 = (2 * (c - 1)) / denom;
+  const a2 = (1 - sqrt2 * tan + c) / denom;
+
+  return new BiquadFilter(b0, b1, b2, a1, a2);
+}
+
+// Low-pass filter coefficients (2nd order Butterworth)
+export function createLowPass(fc: number, fs: number): BiquadFilter {
+  const tan = Math.tan((Math.PI * fc) / fs);
+  const c = tan * tan;
+  const sqrt2 = Math.sqrt(2);
+  const denom = 1 + sqrt2 * tan + c;
+
+  const b0 = c / denom;
+  const b1 = (2 * c) / denom;
+  const b2 = c / denom;
+  const a1 = (2 * (c - 1)) / denom;
+  const a2 = (1 - sqrt2 * tan + c) / denom;
+
+  return new BiquadFilter(b0, b1, b2, a1, a2);
+}
+
+// Notch filter coefficients (removes specific frequency band like 50/60 Hz)
+export function createNotch(f0: number, fs: number, q = 10): BiquadFilter {
+  const w0 = (2 * Math.PI * f0) / fs;
+  const alpha = Math.sin(w0) / (2 * q);
+  const cosw0 = Math.cos(w0);
+
+  const b0 = 1;
+  const b1 = -2 * cosw0;
+  const b2 = 1;
+  const a0 = 1 + alpha;
+  const a1 = -2 * cosw0;
+  const a2 = 1 - alpha;
+
+  return new BiquadFilter(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0);
+}
+
+// Processes a complete dataset through the filter pipeline
+export function preprocessDataset(ds: EmgDataset): EmgDataset {
+  const fs = ds.sampleRate;
+
+  // Create unique filter pipelines for each channel
+  const createPipeline = () => {
+    const hp = createHighPass(20, fs);
+    const lp = createLowPass(Math.min(450, fs * 0.45), fs);
+    const notch50 = createNotch(50, fs, 8);
+    const notch60 = createNotch(60, fs, 8);
+    return { hp, lp, notch50, notch60 };
+  };
+
+  const pipelines = {
+    ch1: createPipeline(),
+    ch2: createPipeline(),
+    ch3: createPipeline(),
+    ch4: createPipeline(),
+  };
+
+  const processedSamples = ds.samples.map((s) => {
+    const processCh = (val: number, pipe: ReturnType<typeof createPipeline>) => {
+      let v = val;
+      v = pipe.hp.process(v);
+      v = pipe.notch50.process(v);
+      v = pipe.notch60.process(v);
+      v = pipe.lp.process(v);
+      return v;
+    };
+
+    return {
+      t: s.t,
+      ch1: processCh(s.ch1, pipelines.ch1),
+      ch2: processCh(s.ch2, pipelines.ch2),
+      ch3: processCh(s.ch3, pipelines.ch3),
+      ch4: processCh(s.ch4, pipelines.ch4),
+    };
+  });
+
+  return {
+    ...ds,
+    samples: processedSamples,
+  };
 }
