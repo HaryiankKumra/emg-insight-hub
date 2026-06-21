@@ -108,6 +108,15 @@
   --sidebar: oklch(0.97 0.005 220);
   --sidebar-foreground: oklch(0.18 0.03 240);
   --sidebar-border: oklch(0.85 0.02 220);
+  --neon-green: oklch(0.55 0.22 145);
+  --neon-cyan: oklch(0.50 0.16 200);
+  --neon-amber: oklch(0.55 0.18 75);
+  --neon-magenta: oklch(0.50 0.25 330);
+  --chart-1: oklch(0.55 0.22 145);
+  --chart-2: oklch(0.50 0.16 200);
+  --chart-3: oklch(0.55 0.18 75);
+  --chart-4: oklch(0.50 0.25 330);
+  --chart-5: oklch(0.55 0.2 25);
 }
 
 @layer base {
@@ -140,19 +149,19 @@
     background-size: 32px 32px;
   }
   .glow-green {
-    box-shadow: 0 0 12px oklch(0.85 0.22 145 / 35%);
+    box-shadow: 0 0 12px var(--neon-green) / 35%;
   }
   .text-glow-green {
-    text-shadow: 0 0 8px oklch(0.85 0.22 145 / 60%);
+    text-shadow: 0 0 8px var(--neon-green) / 60%;
   }
   .text-glow-cyan {
-    text-shadow: 0 0 8px oklch(0.82 0.18 200 / 60%);
+    text-shadow: 0 0 8px var(--neon-cyan) / 60%;
   }
   .text-glow-amber {
-    text-shadow: 0 0 8px oklch(0.85 0.2 75 / 60%);
+    text-shadow: 0 0 8px var(--neon-amber) / 60%;
   }
   .text-glow-magenta {
-    text-shadow: 0 0 8px oklch(0.72 0.27 330 / 60%);
+    text-shadow: 0 0 8px var(--neon-magenta) / 60%;
   }
   .panel {
     background: var(--color-card);
@@ -206,7 +215,7 @@
   background: linear-gradient(
     180deg,
     transparent 0%,
-    oklch(0.85 0.22 145 / 6%) 50%,
+    var(--neon-green) / 6% 50%,
     transparent 100%
   );
   animation: scan 6s linear infinite;
