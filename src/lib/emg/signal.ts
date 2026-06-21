@@ -89,8 +89,9 @@ export function snrFromBaseline(active: number[], baseline: number[]): number {
   return 20 * Math.log10(sigRms / noiseRms);
 }
 
-// Calculate quality from RAW (unfiltered) dataset - gives accurate baseline SNR
-// This avoids high-pass filter artifacts affecting the quality grade
+// Calculate quality from RAW (unfiltered) dataset using ADAPTIVE baseline detection
+// For MyoWare 2.0: finds actual quiet/rest periods, not pre-decided baseline
+// This avoids high-pass filter artifacts and adapts to the data itself
 export function calculateQualityFromRaw(
   rawDs: EmgDataset,
   channels: Channel[] = CHANNELS,
@@ -109,10 +110,47 @@ export function calculateQualityFromRaw(
     };
   }
 
-  // Split into baseline (first 1/3) and active (remaining 2/3)
-  const baselineCount = Math.max(10, Math.floor(usableSamples.length / 3));
-  const baseline = usableSamples.slice(0, baselineCount);
-  const active = usableSamples.slice(baselineCount);
+  // Create temporary dataset from usable samples for activity detection
+  const tempDs: EmgDataset = {
+    ...rawDs,
+    samples: usableSamples,
+  };
+
+  // ADAPTIVE: Detect actual quiet periods (baseline) using RMS envelope
+  const { quietPeriods, activePeriods } = detectActivityPeriods(tempDs, channels, 100, 25);
+
+  // If no clear quiet periods, fallback to first-1/3 heuristic
+  let baselineIndices: number[] = [];
+  if (quietPeriods.length > 0) {
+    // Use samples from first quiet period for baseline (most likely rest)
+    baselineIndices = quietPeriods[0].indices;
+  } else {
+    // Fallback: use first 1/3
+    baselineIndices = usableSamples.map((_, i) => i).slice(0, Math.ceil(usableSamples.length / 3));
+  }
+
+  // If no clear active periods, fallback to last-2/3 heuristic
+  let activeIndices: number[] = [];
+  if (activePeriods.length > 0) {
+    // Combine all active periods
+    for (const period of activePeriods) {
+      activeIndices.push(...period.indices);
+    }
+  } else {
+    // Fallback: use last 2/3
+    const start = Math.ceil(usableSamples.length / 3);
+    activeIndices = usableSamples.map((_, i) => i).slice(start);
+  }
+
+  // Ensure we have data
+  if (baselineIndices.length === 0 || activeIndices.length === 0) {
+    return {
+      ch1: { snrDb: 0, label: "POOR", score: 0 },
+      ch2: { snrDb: 0, label: "POOR", score: 0 },
+      ch3: { snrDb: 0, label: "POOR", score: 0 },
+      ch4: { snrDb: 0, label: "POOR", score: 0 },
+    };
+  }
 
   const result: Record<Channel, { snrDb: number; label: string; score: number }> = {
     ch1: { snrDb: 0, label: "POOR", score: 0 },
@@ -122,8 +160,8 @@ export function calculateQualityFromRaw(
   };
 
   for (const ch of channels) {
-    const baselineValues = baseline.map((s) => s[ch]);
-    const activeValues = active.map((s) => s[ch]);
+    const baselineValues = baselineIndices.map((i) => usableSamples[i][ch]);
+    const activeValues = activeIndices.map((i) => usableSamples[i][ch]);
 
     const snrDb = snrFromBaseline(activeValues, baselineValues);
     const { label, score } = qualityFromSnr(snrDb);
@@ -179,6 +217,87 @@ export function detectOutliers(
   }
 
   return Array.from(outlierIndices).sort((a, b) => a - b);
+}
+
+// Detect activity periods for MyoWare EMG - finds quiet (rest) vs active windows
+// Uses RMS envelope to identify actual baseline periods (not pre-decided)
+export function detectActivityPeriods(
+  ds: EmgDataset,
+  channels: Channel[] = CHANNELS,
+  windowMs = 100, // RMS window in milliseconds
+  quietThresholdPercentile = 25, // Bottom 25% = "quiet"
+): {
+  quietPeriods: Array<{ start: number; end: number; indices: number[] }>;
+  activePeriods: Array<{ start: number; end: number; indices: number[] }>;
+} {
+  const fs = ds.sampleRate;
+  const windowSamples = Math.max(1, Math.floor((windowMs / 1000) * fs));
+
+  // Compute RMS envelope across all channels
+  const rmsPerSample: number[] = [];
+  for (const sample of ds.samples) {
+    let sumSq = 0;
+    for (const ch of channels) {
+      sumSq += sample[ch] * sample[ch];
+    }
+    rmsPerSample.push(Math.sqrt(sumSq / channels.length));
+  }
+
+  // Smooth RMS with sliding window
+  const smoothedRms: number[] = [];
+  for (let i = 0; i < rmsPerSample.length; i++) {
+    let sum = 0;
+    let count = 0;
+    for (let j = Math.max(0, i - windowSamples); j <= Math.min(rmsPerSample.length - 1, i + windowSamples); j++) {
+      sum += rmsPerSample[j];
+      count++;
+    }
+    smoothedRms.push(sum / count);
+  }
+
+  // Find quiet threshold (bottom percentile)
+  const sorted = [...smoothedRms].sort((a, b) => a - b);
+  const quietThresh = sorted[Math.floor(sorted.length * (quietThresholdPercentile / 100))];
+
+  // Segment into quiet vs active
+  const quietPeriods: Array<{ start: number; end: number; indices: number[] }> = [];
+  const activePeriods: Array<{ start: number; end: number; indices: number[] }> = [];
+
+  let inQuiet = smoothedRms[0] <= quietThresh;
+  let periodStart = 0;
+  const currentIndices: number[] = [0];
+
+  for (let i = 1; i < smoothedRms.length; i++) {
+    const isQuiet = smoothedRms[i] <= quietThresh;
+    if (isQuiet !== inQuiet) {
+      // Transition
+      const periodEnd = i;
+      const period = {
+        start: ds.samples[periodStart].t,
+        end: ds.samples[periodEnd - 1].t,
+        indices: currentIndices.slice(),
+      };
+      if (inQuiet) quietPeriods.push(period);
+      else activePeriods.push(period);
+
+      periodStart = i;
+      currentIndices.length = 0;
+      inQuiet = isQuiet;
+    }
+    currentIndices.push(i);
+  }
+  // Final period
+  if (currentIndices.length > 0) {
+    const period = {
+      start: ds.samples[periodStart].t,
+      end: ds.samples[ds.samples.length - 1].t,
+      indices: currentIndices,
+    };
+    if (inQuiet) quietPeriods.push(period);
+    else activePeriods.push(period);
+  }
+
+  return { quietPeriods, activePeriods };
 }
 
 // Quality grade for raw EMG using rest-vs-active SNR (dB).
@@ -395,9 +514,16 @@ export function createNotch(f0: number, fs: number, q = 10): BiquadFilter {
 // Processes a complete dataset through the filter pipeline
 // Processes a complete dataset through the filter pipeline
 // Options: skipFirstSecs = skip first N seconds (default 2 for filter warm-up + startup transients)
-export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2): EmgDataset {
+export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2, removeOutliers = true): EmgDataset {
   const fs = ds.sampleRate;
   const skipSamples = Math.floor(skipFirstSecs * fs);
+
+  // OPTIONAL: Remove outliers first (aggressive for MyoWare: threshold = 3.0)
+  let processingSamples = ds.samples;
+  if (removeOutliers) {
+    const outlierIndices = new Set(detectOutliers(ds.samples, CHANNELS, 3.0)); // More aggressive
+    processingSamples = ds.samples.filter((_, idx) => !outlierIndices.has(idx));
+  }
 
   // Create unique filter pipelines for each channel
   const createPipeline = () => {
@@ -428,8 +554,8 @@ export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2): EmgDataset
   };
 
   // Warm-up phase: process first N samples but discard them
-  for (let i = 0; i < warmupSamples && i < ds.samples.length; i++) {
-    const s = ds.samples[i];
+  for (let i = 0; i < warmupSamples && i < processingSamples.length; i++) {
+    const s = processingSamples[i];
     processCh(s.ch1, pipelines.ch1);
     processCh(s.ch2, pipelines.ch2);
     processCh(s.ch3, pipelines.ch3);
@@ -437,7 +563,7 @@ export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2): EmgDataset
   }
 
   // Process all samples (now filters have settled, no transient)
-  const processedSamples = ds.samples
+  const processedSamples = processingSamples
     .map((s, idx) => {
       return {
         t: s.t,
