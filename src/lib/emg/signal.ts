@@ -108,6 +108,34 @@ export function sliceByTime(ds: EmgDataset, t0: number, t1: number): EmgSample[]
   return ds.samples.filter((s) => s.t >= t0 && s.t < t1);
 }
 
+// Remove statistical outliers using Modified Z-Score method (robust to non-normal distributions)
+// Returns indices of outliers for potential removal
+export function detectOutliers(
+  samples: EmgSample[],
+  channels: Channel[] = CHANNELS,
+  threshold = 3.5,
+): number[] {
+  const outlierIndices = new Set<number>();
+
+  for (const ch of channels) {
+    const values = samples.map((s) => s[ch]);
+    const median = [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+    const mad = [...values.map((v) => Math.abs(v - median))].sort((a, b) => a - b)[
+      Math.floor(values.length / 2)
+    ];
+    const c = 1.4826; // constant for normal distribution
+
+    for (let i = 0; i < samples.length; i++) {
+      const modZ = Math.abs((0.6745 * (values[i] - median)) / (mad + 1e-9));
+      if (modZ > threshold) {
+        outlierIndices.add(i);
+      }
+    }
+  }
+
+  return Array.from(outlierIndices).sort((a, b) => a - b);
+}
+
 // Quality grade for raw EMG using rest-vs-active SNR (dB).
 export function qualityFromSnr(snrDb: number): {
   score: number;
@@ -339,16 +367,29 @@ export function preprocessDataset(ds: EmgDataset): EmgDataset {
     ch4: createPipeline(),
   };
 
-  const processedSamples = ds.samples.map((s) => {
-    const processCh = (val: number, pipe: ReturnType<typeof createPipeline>) => {
-      let v = val;
-      v = pipe.hp.process(v);
-      v = pipe.notch50.process(v);
-      v = pipe.notch60.process(v);
-      v = pipe.lp.process(v);
-      return v;
-    };
+  // Warm up filters to eliminate transient spikes at the start (typically 0.2-0.5 sec of samples)
+  const warmupSamples = Math.max(1, Math.floor(fs * 0.5)); // 500ms warm-up
+  
+  const processCh = (val: number, pipe: ReturnType<typeof createPipeline>) => {
+    let v = val;
+    v = pipe.hp.process(v);
+    v = pipe.notch50.process(v);
+    v = pipe.notch60.process(v);
+    v = pipe.lp.process(v);
+    return v;
+  };
 
+  // Warm-up phase: process first N samples but discard them
+  for (let i = 0; i < warmupSamples && i < ds.samples.length; i++) {
+    const s = ds.samples[i];
+    processCh(s.ch1, pipelines.ch1);
+    processCh(s.ch2, pipelines.ch2);
+    processCh(s.ch3, pipelines.ch3);
+    processCh(s.ch4, pipelines.ch4);
+  }
+
+  // Process all samples (now filters have settled, no transient)
+  const processedSamples = ds.samples.map((s) => {
     return {
       t: s.t,
       ch1: processCh(s.ch1, pipelines.ch1),

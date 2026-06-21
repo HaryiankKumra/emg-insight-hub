@@ -81,8 +81,16 @@ export const analyzeEmg = createServerFn({ method: "POST" })
     const geminiKey = process.env.GEMINI_API_KEY;
     const lovableKey = process.env.LOVABLE_API_KEY;
 
-    if (!geminiKey && !lovableKey) {
-      throw new Error("Missing API Key. Set GEMINI_API_KEY or LOVABLE_API_KEY in the environment.");
+    // Determine which API to use
+    // If GEMINI_API_KEY starts with 'AIza', it's a real Google key; if it starts with 'AQ.', it's a Lovable key
+    const isLovableKey = geminiKey?.startsWith("AQ.");
+    const actualGeminiKey = !isLovableKey ? geminiKey : undefined;
+    const actualLovableKey = isLovableKey ? geminiKey : lovableKey;
+
+    if (!actualGeminiKey && !actualLovableKey) {
+      throw new Error(
+        "Missing API Key. Set GEMINI_API_KEY (format: AIza...) or LOVABLE_API_KEY in the environment.",
+      );
     }
 
     const prompt = `You are a biomedical signal engineer reviewing surface EMG (sEMG) data captured from MyoWare 2.0 sensors on an ESP32 at ${data.sampleRate} Hz. Values are raw mV, baseline-centered.
@@ -106,7 +114,7 @@ Give a concise expert report in markdown with these sections:
 
 Be specific: call out the strongest and weakest channels by name, flag suspected electrode lift / motion artifact / powerline noise (50/60 Hz) if frequencies/quality suggest it, note expected sEMG band is 20–450 Hz with dominant power 50–150 Hz, and suggest concrete fixes. Keep under ~250 words.`;
 
-    if (geminiKey) {
+    if (actualGeminiKey) {
       // Use official Google Gen AI SDK with rate limiting
       if (!geminiLimiter.canMakeRequest()) {
         const retryAfter = geminiLimiter.getRetryAfterSeconds();
@@ -115,7 +123,7 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
         );
       }
 
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const ai = new GoogleGenAI({ apiKey: actualGeminiKey });
       try {
         geminiLimiter.recordRequest();
         const response = await ai.models.generateContent({
@@ -148,12 +156,12 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
         throw new Error(`Gemini SDK error: ${errMsg}`);
       }
     } else {
-      // Fallback to Lovable gateway
+      // Use Lovable gateway
       const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${lovableKey}`,
+          Authorization: `Bearer ${actualLovableKey}`,
         },
         body: JSON.stringify({
           model: "google/gemini-3.5-flash",
@@ -172,6 +180,7 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
         if (res.status === 429) throw new Error("AI rate limit — try again in a moment.");
         if (res.status === 402)
           throw new Error("AI credits exhausted — add credits in workspace billing.");
+        if (res.status === 401) throw new Error("Invalid Lovable API key. Check your GEMINI_API_KEY or LOVABLE_API_KEY.");
         throw new Error(`AI gateway error ${res.status}: ${t.slice(0, 200)}`);
       }
       const json = await res.json();
