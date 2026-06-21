@@ -35,6 +35,7 @@ import {
   CHANNELS,
   CHANNEL_COLORS,
   CHANNEL_LABELS,
+  calculateQualityFromRaw,
   channelArray,
   downsample,
   energy,
@@ -479,14 +480,17 @@ function EnvelopeChart({
 /* ===================== Views ===================== */
 
 function OverviewView() {
-  const { active } = useEmgStore();
-  if (!active) return <EmptyState msg="No dataset loaded — upload a CSV to begin" />;
+  const { active, rawActive } = useEmgStore();
+  if (!active || !rawActive) return <EmptyState msg="No dataset loaded — upload a CSV to begin" />;
 
   const totalSec = active.samples.length / active.sampleRate;
 
+  // Get physiologically-accurate quality from RAW data (peak-based assessment)
+  const qualityMetrics = calculateQualityFromRaw(rawActive, CHANNELS, 2);
+
   const metrics = CHANNELS.map((ch) => {
     const arr = channelArray(active, ch);
-    const q = qualityScore(arr);
+    const q = qualityMetrics[ch];
     return {
       ch,
       rms: rms(arr),
@@ -527,7 +531,7 @@ function OverviewView() {
         <ScopeChart ds={active} height={280} />
       </Panel>
 
-      <Panel title="Channel Quality · SNR" className="col-span-12 lg:col-span-4">
+      <Panel title="Channel Quality · Peak-Based Assessment" className="col-span-12 lg:col-span-4">
         <div className="grid grid-cols-1 gap-2">
           {metrics.map((m) => (
             <div key={m.ch} className="border border-border rounded-sm p-2 bg-background/40">
@@ -560,8 +564,15 @@ function OverviewView() {
                 />
               </div>
               <div className="mt-1.5 grid grid-cols-2 gap-1 text-[10px] text-muted-foreground tabular-nums">
-                <span>RMS: {m.rms.toFixed(3)} mV</span>
+                <span>Reps: {m.q.repCount}</span>
+                <span className="text-right">Consistency: {m.q.peakConsistency}%</span>
+              </div>
+              <div className="mt-1 grid grid-cols-2 gap-1 text-[10px] text-muted-foreground tabular-nums">
+                <span>Anomalies: {m.q.peakOutlierRatio.toFixed(1)}%</span>
                 <span className="text-right">SNR: {m.q.snrDb.toFixed(1)} dB</span>
+              </div>
+              <div className="mt-1 text-[9px] text-primary/70 break-words">
+                {m.q.qualityBasis}
               </div>
             </div>
           ))}
@@ -627,7 +638,16 @@ type OverviewMetric = {
   var: number;
   energy: number;
   zc: number;
-  q: { score: number; label: string; snrDb: number };
+  q: {
+    score: number;
+    label: string;
+    snrDb: number;
+    repCount: number;
+    peakConsistency: number;
+    peakOutlierRatio: number;
+    qualityBasis: string;
+    details: string;
+  };
 };
 
 function AiInsightsPanel({
