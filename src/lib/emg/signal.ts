@@ -80,6 +80,146 @@ export function snr(a: number[]): number {
   return 10 * Math.log10(Math.max(1e-9, r));
 }
 
+// ========== EMG-SPECIFIC QUALITY ASSESSMENT (Peak-Based) ==========
+
+// Find local maxima (peaks = muscle activation events)
+// Peaks represent motor unit activation
+export function findLocalMaxima(
+  signal: number[],
+  minDistance: number = 50, // Minimum samples between peaks (for 1kHz: ~50ms)
+  threshold: number = 0, // Minimum peak height above this value
+): number[] {
+  const peaks: number[] = [];
+  
+  if (signal.length < 3) return peaks;
+
+  for (let i = 1; i < signal.length - 1; i++) {
+    // Local maximum: current > neighbors AND above threshold
+    if (signal[i] > signal[i - 1] && signal[i] > signal[i + 1] && signal[i] > threshold) {
+      // Check if far enough from last peak
+      if (peaks.length === 0 || i - peaks[peaks.length - 1] >= minDistance) {
+        peaks.push(i);
+      }
+    }
+  }
+
+  return peaks;
+}
+
+// Detect and remove anomalous peaks (outliers in peak heights)
+export function filterOutlierPeaks(
+  signal: number[],
+  peakIndices: number[],
+  zScoreThreshold: number = 2.5, // Conservative for physiological signals
+): { cleanPeaks: number[]; outlierPeaks: number[] } {
+  if (peakIndices.length === 0) return { cleanPeaks: [], outlierPeaks: [] };
+
+  // Get peak heights
+  const peakHeights = peakIndices.map((idx) => signal[idx]);
+
+  // Calculate median and MAD (Modified Z-Score)
+  const sorted = [...peakHeights].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const mad = [...peakHeights.map((h) => Math.abs(h - median))].sort((a, b) => a - b)[
+    Math.floor(peakHeights.length / 2)
+  ];
+
+  const cleanPeaks: number[] = [];
+  const outlierPeaks: number[] = [];
+
+  for (let i = 0; i < peakIndices.length; i++) {
+    const modZ = mad > 0 ? Math.abs((0.6745 * (peakHeights[i] - median)) / mad) : 0;
+
+    if (modZ <= zScoreThreshold) {
+      cleanPeaks.push(peakIndices[i]);
+    } else {
+      outlierPeaks.push(peakIndices[i]);
+    }
+  }
+
+  return { cleanPeaks, outlierPeaks };
+}
+
+// Assess EMG signal quality based on peak characteristics
+// Returns: rep count, peak consistency, quality grade
+export function assessEmgSignalQuality(
+  signal: number[],
+  sampleRate: number,
+  minRepDistance: number = 500, // Min ms between reps (default 500ms for controlled exercises)
+): {
+  repCount: number;
+  peakHeights: number[];
+  peakConsistency: number; // 0-100: how similar are peaks?
+  peakOutlierRatio: number; // 0-100: percentage of outlier peaks
+  quality: string; // "EXCELLENT" | "GOOD" | "FAIR" | "POOR"
+  score: number; // 0-100
+  details: string;
+} {
+  // Step 1: Detect all peaks
+  const minDistance = Math.floor((minRepDistance / 1000) * sampleRate);
+  const threshold = mean(signal); // Peaks above mean
+  const allPeaks = findLocalMaxima(signal, minDistance, threshold);
+
+  if (allPeaks.length === 0) {
+    return {
+      repCount: 0,
+      peakHeights: [],
+      peakConsistency: 0,
+      peakOutlierRatio: 0,
+      quality: "POOR",
+      score: 0,
+      details: "No muscle activations detected",
+    };
+  }
+
+  // Step 2: Filter outlier peaks
+  const { cleanPeaks, outlierPeaks } = filterOutlierPeaks(signal, allPeaks, 2.5);
+
+  // Step 3: Calculate consistency of clean peaks
+  const cleanHeights = cleanPeaks.map((idx) => signal[idx]);
+  const heightMean = mean(cleanHeights);
+  const heightStd = Math.sqrt(variance(cleanHeights));
+  const peakConsistency = heightStd > 0 ? Math.max(0, 100 - (heightStd / heightMean) * 100) : 100;
+
+  // Step 4: Outlier ratio
+  const peakOutlierRatio =
+    allPeaks.length > 0 ? (outlierPeaks.length / allPeaks.length) * 100 : 0;
+
+  // Step 5: Determine quality grade
+  let quality: string;
+  let score: number;
+
+  const consistency = Math.max(0, peakConsistency);
+  const anomalyPct = Math.min(100, peakOutlierRatio);
+
+  // Quality logic: Consistency + Low anomalies = GOOD
+  if (consistency > 70 && anomalyPct < 15) {
+    quality = "EXCELLENT";
+    score = 90 + Math.floor((consistency / 100) * 10);
+  } else if (consistency > 60 && anomalyPct < 25) {
+    quality = "GOOD";
+    score = 70 + Math.floor((consistency / 100) * 20);
+  } else if (consistency > 40 && anomalyPct < 40) {
+    quality = "FAIR";
+    score = 50 + Math.floor((consistency / 100) * 20);
+  } else {
+    quality = "POOR";
+    score = Math.floor((consistency / 100) * 50);
+  }
+
+  const details = `${cleanPeaks.length} reps detected (${outlierPeaks.length} anomalies). Consistency: ${consistency.toFixed(1)}% | Anomalies: ${anomalyPct.toFixed(1)}%`;
+
+  return {
+    repCount: cleanPeaks.length,
+    peakHeights: cleanHeights,
+    peakConsistency: consistency,
+    peakOutlierRatio: anomalyPct,
+    quality,
+    score: Math.round(score),
+    details,
+  };
+}
+
 // True SNR for raw sEMG: compare active window RMS to rest baseline RMS.
 // Both inputs are baseline-centered mV samples.
 export function snrFromBaseline(active: number[], baseline: number[]): number {
@@ -91,22 +231,45 @@ export function snrFromBaseline(active: number[], baseline: number[]): number {
 
 // Calculate quality from RAW (unfiltered) dataset using ADAPTIVE baseline detection
 // For MyoWare 2.0: finds actual quiet/rest periods, not pre-decided baseline
-// This avoids high-pass filter artifacts and adapts to the data itself
+// ALSO uses peak-based quality assessment (rep counting, consistency)
+// This avoids high-pass filter artifacts and gives proper EMG assessment
 export function calculateQualityFromRaw(
   rawDs: EmgDataset,
   channels: Channel[] = CHANNELS,
   skipFirstSecs = 2,
-): Record<Channel, { snrDb: number; label: string; score: number }> {
+): Record<
+  Channel,
+  {
+    snrDb: number;
+    label: string;
+    score: number;
+    repCount: number;
+    peakConsistency: number;
+    peakOutlierRatio: number;
+    qualityBasis: string; // Which metric was used
+    details: string;
+  }
+> {
   const fs = rawDs.sampleRate;
   const skipSamples = Math.floor(skipFirstSecs * fs);
   const usableSamples = rawDs.samples.filter((_, idx) => idx >= skipSamples);
 
   if (usableSamples.length === 0) {
+    const emptyResult = {
+      snrDb: 0,
+      label: "POOR",
+      score: 0,
+      repCount: 0,
+      peakConsistency: 0,
+      peakOutlierRatio: 0,
+      qualityBasis: "No data",
+      details: "Insufficient samples",
+    };
     return {
-      ch1: { snrDb: 0, label: "POOR", score: 0 },
-      ch2: { snrDb: 0, label: "POOR", score: 0 },
-      ch3: { snrDb: 0, label: "POOR", score: 0 },
-      ch4: { snrDb: 0, label: "POOR", score: 0 },
+      ch1: emptyResult,
+      ch2: emptyResult,
+      ch3: emptyResult,
+      ch4: emptyResult,
     };
   }
 
@@ -150,29 +313,124 @@ export function calculateQualityFromRaw(
 
   // Ensure we have data
   if (baselineIndices.length === 0 || activeIndices.length === 0) {
+    const emptyResult = {
+      snrDb: 0,
+      label: "POOR",
+      score: 0,
+      repCount: 0,
+      peakConsistency: 0,
+      peakOutlierRatio: 0,
+      qualityBasis: "Failed detection",
+      details: "Could not segment baseline/active",
+    };
     return {
-      ch1: { snrDb: 0, label: "POOR", score: 0 },
-      ch2: { snrDb: 0, label: "POOR", score: 0 },
-      ch3: { snrDb: 0, label: "POOR", score: 0 },
-      ch4: { snrDb: 0, label: "POOR", score: 0 },
+      ch1: emptyResult,
+      ch2: emptyResult,
+      ch3: emptyResult,
+      ch4: emptyResult,
     };
   }
 
-  const result: Record<Channel, { snrDb: number; label: string; score: number }> = {
-    ch1: { snrDb: 0, label: "POOR", score: 0 },
-    ch2: { snrDb: 0, label: "POOR", score: 0 },
-    ch3: { snrDb: 0, label: "POOR", score: 0 },
-    ch4: { snrDb: 0, label: "POOR", score: 0 },
+  const result: Record<
+    Channel,
+    {
+      snrDb: number;
+      label: string;
+      score: number;
+      repCount: number;
+      peakConsistency: number;
+      peakOutlierRatio: number;
+      qualityBasis: string;
+      details: string;
+    }
+  > = {
+    ch1: {
+      snrDb: 0,
+      label: "POOR",
+      score: 0,
+      repCount: 0,
+      peakConsistency: 0,
+      peakOutlierRatio: 0,
+      qualityBasis: "N/A",
+      details: "Not calculated",
+    },
+    ch2: {
+      snrDb: 0,
+      label: "POOR",
+      score: 0,
+      repCount: 0,
+      peakConsistency: 0,
+      peakOutlierRatio: 0,
+      qualityBasis: "N/A",
+      details: "Not calculated",
+    },
+    ch3: {
+      snrDb: 0,
+      label: "POOR",
+      score: 0,
+      repCount: 0,
+      peakConsistency: 0,
+      peakOutlierRatio: 0,
+      qualityBasis: "N/A",
+      details: "Not calculated",
+    },
+    ch4: {
+      snrDb: 0,
+      label: "POOR",
+      score: 0,
+      repCount: 0,
+      peakConsistency: 0,
+      peakOutlierRatio: 0,
+      qualityBasis: "N/A",
+      details: "Not calculated",
+    },
   };
 
   for (const ch of channels) {
     const baselineValues = baselineIndices.map((i) => usableSamples[i][ch]);
     const activeValues = activeIndices.map((i) => usableSamples[i][ch]);
 
+    // Metric 1: SNR (from baseline vs active)
     const snrDb = snrFromBaseline(activeValues, baselineValues);
-    const { label, score } = qualityFromSnr(snrDb);
+    const snrGrade = qualityFromSnr(snrDb);
 
-    result[ch] = { snrDb, label, score };
+    // Metric 2: Peak-based quality (rep counting, consistency, outliers)
+    const peakQuality = assessEmgSignalQuality(activeValues, fs, 500);
+
+    // COMBINED ASSESSMENT: Prefer peak-based (more physiologically relevant)
+    // But use SNR as a sanity check
+    let finalLabel: string = peakQuality.quality;
+    let finalScore: number = peakQuality.score;
+    let qualityBasis: string;
+
+    // If SNR is very low but peaks are detected, trust peaks
+    // If SNR is good and peaks are detected, confirm GOOD
+    if (peakQuality.repCount > 0) {
+      // Peaks detected = likely good signal
+      qualityBasis = `PEAK-BASED (${peakQuality.repCount} reps detected)`;
+      // SNR as validation: if SNR very low but peaks found, downgrade slightly
+      if (snrDb < 5) {
+        finalScore = Math.max(30, finalScore - 10);
+      } else if (snrDb < 10) {
+        // OK, downgrade a bit
+      }
+    } else {
+      // No peaks detected = use SNR-based assessment
+      finalLabel = snrGrade.label;
+      finalScore = snrGrade.score;
+      qualityBasis = "SNR-based (no peaks found)";
+    }
+
+    result[ch] = {
+      snrDb,
+      label: finalLabel,
+      score: finalScore,
+      repCount: peakQuality.repCount,
+      peakConsistency: Math.round(peakQuality.peakConsistency),
+      peakOutlierRatio: Math.round(peakQuality.peakOutlierRatio),
+      qualityBasis,
+      details: peakQuality.details,
+    };
   }
 
   return result;
