@@ -88,7 +88,7 @@ export function detectActivationWindows(
   signal: number[],
   sampleRate: number,
   rmsWindowMs: number = 50, // RMS averaging window (50ms)
-  activationThresholdPercentile: number = 40, // Activations above 40th percentile RMS
+  activationThresholdPercentile: number = 35, // Activations above 35th percentile RMS
   minWindowDurationMs: number = 100, // Minimum rep duration (100ms)
   minGapBetweenRepsMs: number = 300, // Minimum gap between reps to be separate (300ms)
 ): {
@@ -110,9 +110,10 @@ export function detectActivationWindows(
     rmsEnv.push(Math.sqrt(sumSq / count));
   }
 
-  // Step 2: Find activation threshold
+  // Step 2: Find activation threshold using percentile
+  // 35th percentile balances weak muscles (quads) vs strong muscles (calves/arms)
   const sorted = [...rmsEnv].sort((a, b) => a - b);
-  const threshold = sorted[Math.floor(sorted.length * (activationThresholdPercentile / 100))];
+  const threshold = sorted[Math.floor(sorted.length * 0.35)];
 
   // Step 3: Detect windows (contiguous regions above threshold)
   const minWindowSamples = Math.floor((minWindowDurationMs / 1000) * sampleRate);
@@ -209,9 +210,9 @@ export function assessEmgSignalQuality(
   const { windows, threshold, details: winDetails } = detectActivationWindows(
     signal,
     sampleRate,
-    50, // RMS window
-    35, // Percentile for activation threshold (balanced: catches weak muscles, avoids heavy noise)
-    80, // Min window duration (balanced: 80ms catches most reps without being too loose)
+    50, // RMS window (50ms)
+    35, // Percentile threshold (35% balances weak & strong muscles)
+    100, // Min window duration (100ms)
     minRepDistance, // Gap between windows = gap between reps
   );
 
