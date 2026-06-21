@@ -1726,7 +1726,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
   const channelDisplayLabels = LEG_MUSCLES;
 
   return (
-    <div className="relative min-h-full flex flex-col bg-[#05080f] text-slate-100 rounded-lg overflow-hidden border border-border">
+    <div className="relative min-h-full flex flex-col bg-background text-foreground rounded-lg overflow-hidden border border-border">
       {/* 60 FPS Game Runner Screen */}
       <div className="relative w-full h-[220px] shrink-0 border-b border-border select-none">
         <canvas ref={gameCanvasRef} className="w-full h-full block" />
@@ -1793,7 +1793,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                           targetLimb,
                         });
                       }}
-                      className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                      className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
                     />
                   </div>
 
@@ -1818,7 +1818,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
                       >
                         <option value="male">Male</option>
                         <option value="female">Female</option>
@@ -1844,7 +1844,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
                       />
                     </div>
                   </div>
@@ -1871,7 +1871,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1894,7 +1894,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
                       />
                     </div>
                   </div>
@@ -1920,7 +1920,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb: e.target.value,
                           });
                         }}
-                        className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
                       >
                         <option value="leg">🦵 Leg Muscles</option>
                         <option value="arm">💪 Arm Muscles</option>
@@ -1947,7 +1947,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                               targetLimb,
                             });
                           }}
-                          className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                          className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
                         >
                           {exerciseList.map((opt) => (
                             <option key={opt.value} value={opt.value}>
@@ -1999,7 +1999,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
                       >
                         {[1, 2, 3, 4, 5].map((n) => (
                           <option key={n} value={n}>
@@ -2053,7 +2053,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                         className={`px-2.5 py-1.5 text-[10px] font-mono tracking-wider border rounded-sm transition-all ${
                           activeChannels.includes(0)
                             ? "bg-primary/20 border-primary text-primary"
-                            : "bg-[#090d16]/60 border-border text-muted-foreground hover:border-primary/40"
+                            : "bg-muted/60 border-border text-muted-foreground hover:border-primary/40"
                         }`}
                       >
                         🤖 Auto (Highest RMS)
@@ -2086,7 +2086,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             className={`px-2.5 py-1.5 text-[10px] font-mono tracking-wider border rounded-sm transition-all ${
                               isActive
                                 ? "bg-primary/20 border-primary text-primary"
-                                : "bg-[#090d16]/60 border-border text-muted-foreground hover:border-primary/40"
+                                : "bg-muted/60 border-border text-muted-foreground hover:border-primary/40"
                             }`}
                           >
                             CH{chId} · {label.split(" (")[0]}
@@ -2105,7 +2105,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       <select
                         value={combMode}
                         onChange={(e) => setCombMode(e.target.value as any)}
-                        className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
                       >
                         <option value="avg">Average RMS (Smooth combined effort)</option>
                         <option value="max">Max RMS (Any muscle above threshold)</option>
@@ -2117,7 +2117,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   )}
 
                   {/* Live RMS Meter Preview */}
-                  <div className="bg-[#090d16]/50 border border-border/80 rounded-sm p-2.5 flex items-center justify-between text-xs tracking-wider">
+                  <div className="bg-muted/50 border border-border/80 rounded-sm p-2.5 flex items-center justify-between text-xs tracking-wider">
                     <span className="text-[10px] uppercase font-bold text-muted-foreground">
                       Live Signal Preview:
                     </span>
@@ -2244,7 +2244,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
       {/* 2. CALIBRATION OVERLAY SCREEN */}
       {phase === "calibrating" && (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[#05080f]/95">
+        <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background/95">
           <div className="panel max-w-sm w-full p-6 text-center flex flex-col gap-4 border-primary">
             <header className="border-b border-border pb-3">
               <h2 className="text-glow-green text-primary font-bold text-base uppercase tracking-widest">
@@ -2272,7 +2272,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 <span>RMS Level</span>
                 <span className="text-primary font-bold">{calibRms} mV</span>
               </div>
-              <div className="h-2 bg-[#090d16] border border-border/80 rounded-full overflow-hidden">
+              <div className="h-2 bg-muted border border-border/80 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-primary to-emerald-400 transition-all duration-75"
                   style={{ width: `${Math.min((calibRms / 200) * 100, 100)}%` }}
@@ -2298,7 +2298,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
       {/* 3. REST COUNTDOWN / READY OVERLAYS */}
       {(phase === "resting" || phase === "ready") && (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[#05080f]/95">
+        <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background/95">
           <div className="text-center select-none">
             <div
               className="font-mono text-8xl font-black tracking-tight leading-none text-glow-cyan"
@@ -2318,12 +2318,12 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
       {/* 4. AT-HURDLE INTERACTIVE FLEX BAR */}
       {phase === "at_hurdle" && (
-        <div className="flex-1 p-3 flex flex-col items-center justify-center bg-[#05080f]/95">
+        <div className="flex-1 p-3 flex flex-col items-center justify-center bg-background/95">
           <div className="panel max-w-lg w-full p-4 flex flex-col gap-4 border-primary">
             {/* Header row */}
             <div className="flex justify-between items-center border-b border-border pb-2.5">
               <div>
-                <h3 className="font-mono text-xs font-bold tracking-widest text-slate-200">
+                <h3 className="font-mono text-xs font-bold tracking-widest text-foreground/90">
                   HURDLE {currentHurdle + 1} / {numHurdles}
                 </h3>
               </div>
@@ -2385,7 +2385,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 <span className="text-primary text-glow-green">Target Flex ({threshold} mV)</span>
               </div>
 
-              <div className="h-10 bg-[#090d16] border border-border/80 rounded-sm relative overflow-hidden flex items-center">
+              <div className="h-10 bg-muted border border-border/80 rounded-sm relative overflow-hidden flex items-center">
                 {/* Contraction level fill bar */}
                 <div
                   className={`h-full transition-all duration-75 ${
@@ -2427,7 +2427,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
             </div>
 
             {/* Waves Canvas Scope section */}
-            <div className="bg-[#090d16]/70 border border-border/60 p-2 rounded-sm relative">
+            <div className="bg-muted/70 border border-border/60 p-2 rounded-sm relative">
               <canvas ref={waveCanvasRef} className="w-full h-[60px] block" />
               <span className="absolute bottom-1 right-2 font-mono text-[7px] text-muted-foreground/30 tracking-widest uppercase">
                 Live EMG Scope
@@ -2436,15 +2436,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
             {/* Stats list footer */}
             <div className="grid grid-cols-4 gap-1.5 text-center font-mono mt-1">
-              <div className="bg-[#090d16]/50 border border-border/40 p-1.5 rounded-sm">
-                <span className="block text-[15px] font-bold text-slate-200">
+              <div className="bg-muted/50 border border-border/40 p-1.5 rounded-sm">
+                <span className="block text-[15px] font-bold text-foreground/90">
                   {Math.round(gameRef.current.currentPeakEMG)} mV
                 </span>
                 <span className="block text-[7px] text-muted-foreground tracking-widest uppercase mt-0.5">
                   Peak flex
                 </span>
               </div>
-              <div className="bg-[#090d16]/50 border border-border/40 p-1.5 rounded-sm">
+              <div className="bg-muted/50 border border-border/40 p-1.5 rounded-sm">
                 <span className="block text-[15px] font-bold text-primary">
                   {Math.round(threshold)} mV
                 </span>
@@ -2452,14 +2452,14 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Target
                 </span>
               </div>
-              <div className="bg-[#090d16]/50 border border-border/40 p-1.5 rounded-sm">
+              <div className="bg-muted/50 border border-border/40 p-1.5 rounded-sm">
                 <span className="block text-[15px] font-bold text-orange-400">{totalAttempts}</span>
                 <span className="block text-[7px] text-muted-foreground tracking-widest uppercase mt-0.5">
                   Attempts
                 </span>
               </div>
-              <div className="bg-[#090d16]/50 border border-border/40 p-1.5 rounded-sm">
-                <span className="block text-[15px] font-bold text-slate-300">
+              <div className="bg-muted/50 border border-border/40 p-1.5 rounded-sm">
+                <span className="block text-[15px] font-bold text-foreground/80">
                   {gameRef.current.liveChLabel}
                 </span>
                 <span className="block text-[7px] text-muted-foreground tracking-widest uppercase mt-0.5">
@@ -2486,7 +2486,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
             {/* Quick stats cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
-              <div className="border border-border/60 bg-[#090d16]/55 rounded-sm p-3">
+              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
                 <span className="block text-2xl font-bold text-primary text-glow-green">
                   {numHurdles}
                 </span>
@@ -2494,15 +2494,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Hurdles Cleared
                 </span>
               </div>
-              <div className="border border-border/60 bg-[#090d16]/55 rounded-sm p-3">
-                <span className="block text-2xl font-bold text-slate-200">
+              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+                <span className="block text-2xl font-bold text-foreground/90">
                   {gameRef.current.hurdleLog.reduce((s, h) => s + (h ? h.attempts.length : 0), 0)}
                 </span>
                 <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
                   Total Attempts
                 </span>
               </div>
-              <div className="border border-border/60 bg-[#090d16]/55 rounded-sm p-3">
+              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
                 <span className="block text-2xl font-bold text-[var(--neon-cyan)] text-glow-cyan">
                   {((Date.now() - gameRef.current.sessionStartTime) / 1000).toFixed(1)}s
                 </span>
@@ -2510,7 +2510,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Session Duration
                 </span>
               </div>
-              <div className="border border-border/60 bg-[#090d16]/55 rounded-sm p-3">
+              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
                 <span className="block text-2xl font-bold text-orange-400 text-glow-amber">
                   {(
                     (numHurdles /
@@ -2532,8 +2532,8 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono mt-[-8px]">
-              <div className="border border-border/60 bg-[#090d16]/55 rounded-sm p-3">
-                <span className="block text-2xl font-bold text-slate-200">
+              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+                <span className="block text-2xl font-bold text-foreground/90">
                   {Math.round(
                     gameRef.current.hurdleLog.reduce((s, h) => {
                       if (!h) return s;
@@ -2547,7 +2547,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Avg Peak EMG
                 </span>
               </div>
-              <div className="border border-border/60 bg-[#090d16]/55 rounded-sm p-3">
+              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
                 <span className="block text-2xl font-bold text-primary">
                   {Math.round(threshold)} mV
                 </span>
@@ -2555,14 +2555,14 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Target Limit
                 </span>
               </div>
-              <div className="border border-border/60 bg-[#090d16]/55 rounded-sm p-3">
-                <span className="block text-2xl font-bold text-slate-300">{participant}</span>
+              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+                <span className="block text-2xl font-bold text-foreground/80">{participant}</span>
                 <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
                   Participant
                 </span>
               </div>
-              <div className="border border-border/60 bg-[#090d16]/55 rounded-sm p-3">
-                <span className="block text-2xl font-bold text-slate-300">
+              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+                <span className="block text-2xl font-bold text-foreground/80">
                   {exercise.replace("_", " ")}
                 </span>
                 <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
@@ -2574,7 +2574,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
             {/* Hurdle alignment log table */}
             <div className="overflow-x-auto border border-border/60 rounded-sm">
               <table className="w-full font-mono text-[11px] tabular-nums text-left border-collapse">
-                <thead className="bg-[#090d16]/80 text-[8px] tracking-widest text-muted-foreground uppercase border-b border-border">
+                <thead className="bg-muted/80 text-[8px] tracking-widest text-muted-foreground uppercase border-b border-border">
                   <tr>
                     <th className="p-2">Hurdle #</th>
                     <th className="p-2 text-right">Attempts</th>
@@ -2595,13 +2595,13 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                     const count = h.attempts.length;
                     return (
                       <tr key={i} className="border-b border-border/40 hover:bg-slate-800/20">
-                        <td className="p-2 font-bold text-slate-300">Hurdle {i + 1}</td>
+                        <td className="p-2 font-bold text-foreground/80">Hurdle {i + 1}</td>
                         <td className="p-2 text-right">{count}</td>
                         <td className="p-2 text-right text-muted-foreground">{clearedTime}</td>
                         <td className="p-2 text-right text-primary">
                           {success ? `${Math.round(success.peakEMG_mV)} mV` : "—"}
                         </td>
-                        <td className="p-2 text-right text-slate-400">
+                        <td className="p-2 text-right text-muted-foreground">
                           {Math.round(threshold)} mV
                         </td>
                         <td className="p-2 text-right text-[var(--neon-cyan)]">
@@ -2674,9 +2674,9 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       {/* --- Alignment Details Modal Overlay --- */}
       {showAlignModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="panel max-w-sm w-full p-5 bg-[#0b1120] border-border relative flex flex-col gap-4 font-mono text-xs">
+          <div className="panel max-w-sm w-full p-5 bg-card text-foreground border-border relative flex flex-col gap-4 font-mono text-xs">
             <header className="flex justify-between items-center border-b border-border/60 pb-2">
-              <h3 className="font-bold text-sm text-slate-100">📊 Multi-Channel Data Alignment</h3>
+              <h3 className="font-bold text-sm text-foreground">📊 Multi-Channel Data Alignment</h3>
               <button
                 onClick={() => setShowAlignModal(false)}
                 className="text-muted-foreground hover:text-foreground text-lg font-bold leading-none cursor-pointer"
@@ -2724,35 +2724,35 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                     </div>
                   </div>
 
-                  <div className="bg-[#090d16]/60 border border-border/40 rounded-sm p-2.5 text-[10px] space-y-1.5 leading-relaxed text-slate-300">
+                  <div className="bg-muted/60 border border-border/40 rounded-sm p-2.5 text-[10px] space-y-1.5 leading-relaxed text-foreground/80">
                     <div className="flex justify-between">
                       <span>Active Channels:</span>
-                      <strong className="text-slate-100">
+                      <strong className="text-foreground">
                         {alignedStats.active.map((c) => `CH${c}`).join(", ")}
                       </strong>
                     </div>
                     <div className="flex justify-between">
                       <span>Total Samples:</span>
-                      <strong className="text-slate-100">
+                      <strong className="text-foreground">
                         {alignedStats.totalFrames.toLocaleString()}
                       </strong>
                     </div>
                     <div className="flex justify-between">
                       <span>Aligned Samples:</span>
-                      <strong className="text-slate-100">
+                      <strong className="text-foreground">
                         {alignedStats.alignedFrames.toLocaleString()}
                       </strong>
                     </div>
                     <div className="flex justify-between">
                       <span>Duration:</span>
-                      <strong className="text-slate-100">
+                      <strong className="text-foreground">
                         {alignedStats.durationS.toFixed(1)}s
                       </strong>
                     </div>
                   </div>
 
                   <div className="space-y-2 mt-1">
-                    <div className="font-bold text-[10px] uppercase text-slate-300">
+                    <div className="font-bold text-[10px] uppercase text-foreground/80">
                       Channel Coverage Details:
                     </div>
                     {alignedStats.active.map((chId) => {
@@ -2767,7 +2767,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             </span>
                             <span>{pct}% sync</span>
                           </div>
-                          <div className="h-1.5 bg-[#090d16] rounded-full overflow-hidden">
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full"
                               style={{ width: `${pct}%`, backgroundColor: col }}

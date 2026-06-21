@@ -4,9 +4,8 @@ import { GoogleGenAI } from "@google/genai";
 export interface ChannelSummary {
   channel: string;
   label: string;
-  baseline_rms_mV: number;
-  active_rms_mV: number;
-  active_mav_mV: number;
+  rms_mV: number;
+  mav_mV: number;
   snr_db: number;
   quality_label: string;
   mean_freq_hz: number;
@@ -18,8 +17,6 @@ export interface AnalyzeInput {
   datasetName: string;
   sampleRate: number;
   durationSec: number;
-  baselineSec: number;
-  activeSec: number;
   channels: ChannelSummary[];
 }
 
@@ -36,13 +33,13 @@ export const analyzeEmg = createServerFn({ method: "POST" })
     const prompt = `You are a biomedical signal engineer reviewing surface EMG (sEMG) data captured from MyoWare 2.0 sensors on an ESP32 at ${data.sampleRate} Hz. Values are raw mV, baseline-centered.
 
 Dataset: ${data.datasetName}
-Duration: ${data.durationSec.toFixed(1)} s total — first ${data.baselineSec.toFixed(1)} s is REST baseline (sensor warm-up / no contraction), remaining ${data.activeSec.toFixed(1)} s is the EXERCISE window.
+Duration: ${data.durationSec.toFixed(1)} s total.
 
-Per-channel summary (computed on the exercise window, baseline = rest window):
+Per-channel summary:
 ${data.channels
   .map(
     (c) =>
-      `- ${c.channel} (${c.label}): baseline RMS ${c.baseline_rms_mV.toFixed(3)} mV, active RMS ${c.active_rms_mV.toFixed(3)} mV, MAV ${c.active_mav_mV.toFixed(3)} mV, SNR ${c.snr_db.toFixed(1)} dB → ${c.quality_label}. Mean f ${c.mean_freq_hz.toFixed(1)} Hz, median f ${c.median_freq_hz.toFixed(1)} Hz, dominant ${c.dominant_freq_hz.toFixed(1)} Hz.`,
+      `- ${c.channel} (${c.label}): RMS ${c.rms_mV.toFixed(3)} mV, MAV ${c.mav_mV.toFixed(3)} mV, SNR ${c.snr_db.toFixed(1)} dB → ${c.quality_label}. Mean f ${c.mean_freq_hz.toFixed(1)} Hz, median f ${c.median_freq_hz.toFixed(1)} Hz, dominant ${c.dominant_freq_hz.toFixed(1)} Hz.`,
   )
   .join("\n")}
 

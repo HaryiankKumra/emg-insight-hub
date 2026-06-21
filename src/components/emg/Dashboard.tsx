@@ -105,7 +105,7 @@ function Shell() {
         <Sidebar view={view} setView={setView} />
         <main className="flex-1 overflow-auto p-3">
           {view === "dashboard" && <OverviewView />}
-          {view === "record" && <RecordView />}
+          {view === "record" && <RecordView onSwitchView={(v) => setView(v)} />}
           {view === "game" && <GameView onBackToDashboard={() => setView("dashboard")} />}
           {view === "upload" && <UploadView />}
           {view === "signal" && <SignalView />}
@@ -166,10 +166,7 @@ function TopBar({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: 
 }
 
 function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) {
-  const { baselineSec, setBaselineSec, active, dspEnabled, setDspEnabled } = useEmgStore();
-  const maxBase = active
-    ? Math.max(5, Math.floor(active.samples.length / active.sampleRate) - 1)
-    : 120;
+  const { active, dspEnabled, setDspEnabled } = useEmgStore();
   return (
     <aside className="w-44 shrink-0 border-r border-border bg-sidebar/60 p-2 hidden md:flex flex-col gap-1">
       <div className="px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -198,23 +195,6 @@ function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) 
         );
       })}
       <div className="mt-auto pt-2 border-t border-border text-[10px] text-muted-foreground px-2 space-y-2">
-        <div>
-          <div className="flex items-center justify-between">
-            <span className="uppercase tracking-widest">Baseline</span>
-            <span className="text-primary tabular-nums">{baselineSec}s</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={maxBase}
-            step={1}
-            value={Math.min(baselineSec, maxBase)}
-            onChange={(e) => setBaselineSec(Number(e.target.value))}
-            className="w-full accent-primary"
-          />
-          <div className="text-[9px] opacity-70">rest window for SNR</div>
-        </div>
-
         <div className="border-t border-border/60 pt-2 mt-1">
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
@@ -421,7 +401,7 @@ function EnvelopeChart({
   height = 220,
 }: {
   ds: EmgDataset;
-  baselineSec: number;
+  baselineSec?: number;
   height?: number;
 }) {
   const data = useMemo(() => {
@@ -474,7 +454,7 @@ function EnvelopeChart({
             }}
             formatter={(v: number) => `${v.toFixed(3)} mV`}
           />
-          {baselineSec > 0 && (
+          {baselineSec != null && baselineSec > 0 && (
             <ReferenceLine x={baselineSec} stroke="var(--neon-magenta)" strokeDasharray="4 3" />
           )}
           {CHANNELS.map((ch) => (
@@ -499,29 +479,22 @@ function EnvelopeChart({
 /* ===================== Views ===================== */
 
 function OverviewView() {
-  const { active, baselineSec } = useEmgStore();
+  const { active } = useEmgStore();
   if (!active) return <EmptyState msg="No dataset loaded — upload a CSV to begin" />;
 
   const totalSec = active.samples.length / active.sampleRate;
-  const effBase = Math.min(baselineSec, Math.max(0, totalSec - 1));
-  const baseSamples = sliceByTime(active, 0, effBase);
-  const actSamples = sliceByTime(active, effBase, totalSec);
 
   const metrics = CHANNELS.map((ch) => {
-    const allArr = channelArray(active, ch);
-    const baseArr = baseSamples.map((s) => s[ch]);
-    const actArr = actSamples.length ? actSamples.map((s) => s[ch]) : allArr;
-    const snrDb = snrFromBaseline(actArr, baseArr.length ? baseArr : actArr);
-    const q = baseArr.length ? qualityFromSnr(snrDb) : qualityScore(actArr);
+    const arr = channelArray(active, ch);
+    const q = qualityScore(arr);
     return {
       ch,
-      baseRms: rms(baseArr),
-      rms: rms(actArr),
-      mav: mav(actArr),
-      var: variance(actArr),
-      energy: energy(actArr),
-      zc: zeroCrossings(actArr, rms(baseArr) * 1.5 || 0.01),
-      q: { ...q, snrDb },
+      rms: rms(arr),
+      mav: mav(arr),
+      var: variance(arr),
+      energy: energy(arr),
+      zc: zeroCrossings(arr),
+      q,
     };
   });
 
@@ -530,17 +503,10 @@ function OverviewView() {
 
   return (
     <div className="grid grid-cols-12 gap-3 auto-rows-min">
-      <div className="col-span-12 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+      <div className="col-span-12 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
         <Stat label="Channels" value="4" />
         <Stat label="Sample Rate" value={active.sampleRate} unit="Hz" tone="cyan" />
-        <Stat label="Total" value={totalSec.toFixed(1)} unit="s" tone="amber" />
-        <Stat label="Rest" value={effBase.toFixed(0)} unit="s" />
-        <Stat
-          label="Exercise"
-          value={Math.max(0, totalSec - effBase).toFixed(1)}
-          unit="s"
-          tone="amber"
-        />
+        <Stat label="Total Duration" value={totalSec.toFixed(1)} unit="s" tone="amber" />
         <Stat
           label="Avg Quality"
           value={`${avgQ}%`}
@@ -553,16 +519,15 @@ function OverviewView() {
         title="Live Multi-Channel Scope · raw mV"
         className="col-span-12 lg:col-span-8"
         right={
-          <span className="text-[10px] text-muted-foreground">
-            <span className="text-[var(--neon-magenta)]">▮</span> rest/exercise split @{" "}
-            {effBase.toFixed(0)}s
+          <span className="text-primary font-bold">
+            ● {active.name}
           </span>
         }
       >
-        <ScopeChart ds={active} height={280} baselineSec={effBase} />
+        <ScopeChart ds={active} height={280} />
       </Panel>
 
-      <Panel title="Channel Quality · rest vs active SNR" className="col-span-12 lg:col-span-4">
+      <Panel title="Channel Quality · SNR" className="col-span-12 lg:col-span-4">
         <div className="grid grid-cols-1 gap-2">
           {metrics.map((m) => (
             <div key={m.ch} className="border border-border rounded-sm p-2 bg-background/40">
@@ -594,10 +559,9 @@ function OverviewView() {
                   style={{ width: `${m.q.score}%`, background: CHANNEL_COLORS[m.ch] }}
                 />
               </div>
-              <div className="mt-1.5 grid grid-cols-3 gap-1 text-[10px] text-muted-foreground tabular-nums">
-                <span>Rest {m.baseRms.toFixed(3)}</span>
-                <span>Act {m.rms.toFixed(3)}</span>
-                <span>SNR {m.q.snrDb.toFixed(1)}dB</span>
+              <div className="mt-1.5 grid grid-cols-2 gap-1 text-[10px] text-muted-foreground tabular-nums">
+                <span>RMS: {m.rms.toFixed(3)} mV</span>
+                <span className="text-right">SNR: {m.q.snrDb.toFixed(1)} dB</span>
               </div>
             </div>
           ))}
@@ -605,24 +569,22 @@ function OverviewView() {
       </Panel>
 
       <Panel title="Activation Envelope · 100ms sliding RMS" className="col-span-12 lg:col-span-8">
-        <EnvelopeChart ds={active} baselineSec={effBase} height={240} />
+        <EnvelopeChart ds={active} height={240} />
       </Panel>
 
       <AiInsightsPanel
         className="col-span-12 lg:col-span-4"
         active={active}
-        baselineSec={effBase}
         metrics={metrics}
       />
 
-      <Panel title="Exercise-Window Statistics" className="col-span-12">
+      <Panel title="Channel Statistics" className="col-span-12">
         <div className="overflow-x-auto">
           <table className="w-full text-[11px] tabular-nums">
             <thead className="text-[10px] uppercase tracking-widest text-muted-foreground">
               <tr className="border-b border-border">
                 <th className="text-left p-2">Channel</th>
-                <th className="text-right p-2">Rest RMS (mV)</th>
-                <th className="text-right p-2">Active RMS (mV)</th>
+                <th className="text-right p-2">RMS (mV)</th>
                 <th className="text-right p-2">MAV (mV)</th>
                 <th className="text-right p-2">Variance</th>
                 <th className="text-right p-2">Energy</th>
@@ -642,7 +604,6 @@ function OverviewView() {
                       {m.ch.toUpperCase()} · {CHANNEL_LABELS[m.ch]}
                     </span>
                   </td>
-                  <td className="text-right p-2">{m.baseRms.toFixed(4)}</td>
                   <td className="text-right p-2">{m.rms.toFixed(4)}</td>
                   <td className="text-right p-2">{m.mav.toFixed(4)}</td>
                   <td className="text-right p-2">{m.var.toFixed(4)}</td>
@@ -661,7 +622,6 @@ function OverviewView() {
 
 type OverviewMetric = {
   ch: Channel;
-  baseRms: number;
   rms: number;
   mav: number;
   var: number;
@@ -672,12 +632,10 @@ type OverviewMetric = {
 
 function AiInsightsPanel({
   active,
-  baselineSec,
   metrics,
   className,
 }: {
   active: EmgDataset;
-  baselineSec: number;
   metrics: OverviewMetric[];
   className?: string;
 }) {
@@ -692,18 +650,14 @@ function AiInsightsPanel({
     try {
       const totalSec = active.samples.length / active.sampleRate;
       const chSummaries = metrics.map((m) => {
-        const arr = channelArray(active, m.ch).slice(Math.floor(baselineSec * active.sampleRate));
-        const { freq, mag } = fftMagnitude(
-          arr.length ? arr : channelArray(active, m.ch),
-          active.sampleRate,
-        );
+        const arr = channelArray(active, m.ch);
+        const { freq, mag } = fftMagnitude(arr, active.sampleRate);
         const s = spectralMetrics(freq, mag);
         return {
           channel: m.ch.toUpperCase(),
           label: CHANNEL_LABELS[m.ch],
-          baseline_rms_mV: +m.baseRms.toFixed(4),
-          active_rms_mV: +m.rms.toFixed(4),
-          active_mav_mV: +m.mav.toFixed(4),
+          rms_mV: +m.rms.toFixed(4),
+          mav_mV: +m.mav.toFixed(4),
           snr_db: +m.q.snrDb.toFixed(2),
           quality_label: m.q.label,
           mean_freq_hz: +s.meanFreq.toFixed(1),
@@ -716,8 +670,6 @@ function AiInsightsPanel({
           datasetName: active.name,
           sampleRate: active.sampleRate,
           durationSec: totalSec,
-          baselineSec,
-          activeSec: Math.max(0, totalSec - baselineSec),
           channels: chSummaries,
         },
       });

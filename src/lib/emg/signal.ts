@@ -213,52 +213,16 @@ export function spectralMetrics(freq: number[], mag: number[]) {
   return { meanFreq, medianFreq: median, dominantFreq: dominant };
 }
 
-export function estimateSnr(samples: number[], sampleRate = 1000): number {
-  if (samples.length < sampleRate * 0.5) return 0; // too short
-
-  // Slide a 200ms window to find RMS values
-  const winLen = Math.max(5, Math.floor(sampleRate * 0.2)); // 200ms
-  const step = Math.max(2, Math.floor(sampleRate * 0.05)); // 50ms step
-  const rmsVals: number[] = [];
-
-  for (let i = 0; i <= samples.length - winLen; i += step) {
-    let sumSq = 0;
-    for (let j = 0; j < winLen; j++) {
-      const v = samples[i + j];
-      sumSq += v * v;
-    }
-    rmsVals.push(Math.sqrt(sumSq / winLen));
-  }
-
-  if (!rmsVals.length) return 0;
-
-  rmsVals.sort((a, b) => a - b);
-
-  // Noise floor is estimated as the 10th percentile of RMS (minimum noise during rest periods)
-  const noiseFloor = rmsVals[Math.floor(rmsVals.length * 0.1)] ?? 1e-6;
-
-  // Active signal is estimated as the 90th percentile of RMS (maximum contraction amplitude)
-  const activeLevel = rmsVals[Math.floor(rmsVals.length * 0.9)] ?? 1e-6;
-
-  if (noiseFloor <= 1e-9) return activeLevel > 0 ? 60 : 0;
-
-  const ratio = activeLevel / noiseFloor;
-  return 20 * Math.log10(Math.max(1, ratio));
-}
-
-export function qualityScore(
-  samples: number[],
-  sampleRate = 1000,
-): {
+export function qualityScore(samples: number[]): {
   score: number;
   label: "EXCELLENT" | "GOOD" | "FAIR" | "POOR";
   snrDb: number;
 } {
   if (!samples.length) return { score: 0, label: "POOR", snrDb: 0 };
-  const s = estimateSnr(samples, sampleRate);
-  const clamped = Math.max(0, Math.min(30, s));
-  const score = Math.round((clamped / 30) * 100);
-  const label = score >= 75 ? "EXCELLENT" : score >= 50 ? "GOOD" : score >= 25 ? "FAIR" : "POOR";
+  const s = snr(samples);
+  const cleaned = Math.max(0, Math.min(40, s));
+  const score = Math.round((cleaned / 40) * 100);
+  const label = score >= 80 ? "EXCELLENT" : score >= 60 ? "GOOD" : score >= 35 ? "FAIR" : "POOR";
   return { score, label, snrDb: s };
 }
 
