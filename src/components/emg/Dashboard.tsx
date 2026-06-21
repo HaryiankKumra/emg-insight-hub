@@ -139,19 +139,21 @@ function TopBar({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: 
 }
 
 function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) {
+  const { baselineSec, setBaselineSec, active } = useEmgStore();
+  const maxBase = active ? Math.max(5, Math.floor(active.samples.length / active.sampleRate) - 1) : 120;
   return (
     <aside className="w-44 shrink-0 border-r border-border bg-sidebar/60 p-2 hidden md:flex flex-col gap-1">
       <div className="px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Modules</div>
       {NAV.map((n) => {
         const Icon = n.icon;
-        const active = view === n.id;
+        const isActive = view === n.id;
         return (
           <button
             key={n.id}
             onClick={() => setView(n.id)}
             className={cn(
               "group flex items-center justify-between px-2 py-1.5 rounded-sm text-[12px] border border-transparent",
-              active
+              isActive
                 ? "bg-primary/15 border-primary/40 text-primary text-glow-green"
                 : "text-foreground/80 hover:bg-accent hover:border-border",
             )}
@@ -164,8 +166,24 @@ function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) 
           </button>
         );
       })}
-      <div className="mt-auto pt-2 border-t border-border text-[10px] text-muted-foreground px-2">
-        <div className="flex items-center gap-1.5"><Cpu className="size-3" /> SR · 1000 Hz</div>
+      <div className="mt-auto pt-2 border-t border-border text-[10px] text-muted-foreground px-2 space-y-2">
+        <div>
+          <div className="flex items-center justify-between">
+            <span className="uppercase tracking-widest">Baseline</span>
+            <span className="text-primary tabular-nums">{baselineSec}s</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={maxBase}
+            step={1}
+            value={Math.min(baselineSec, maxBase)}
+            onChange={(e) => setBaselineSec(Number(e.target.value))}
+            className="w-full accent-primary"
+          />
+          <div className="text-[9px] opacity-70">rest window for SNR</div>
+        </div>
+        <div className="flex items-center gap-1.5"><Cpu className="size-3" /> SR · {active?.sampleRate ?? 1000} Hz</div>
         <div>FFT · 1024 · Hann</div>
       </div>
     </aside>
