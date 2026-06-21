@@ -3,10 +3,10 @@
 export type Channel = "ch1" | "ch2" | "ch3" | "ch4";
 export const CHANNELS: Channel[] = ["ch1", "ch2", "ch3", "ch4"];
 export const CHANNEL_LABELS: Record<Channel, string> = {
-  ch1: "Tibialis Anterior (TA)",
-  ch2: "Gastrocnemius (Calf)",
-  ch3: "Rectus Femoris (Quad)",
-  ch4: "Biceps Femoris (Hamstring)",
+  ch1: "Rectus Femoris (Quad)",
+  ch2: "Biceps Femoris (Hamstring)",
+  ch3: "Gastrocnemius Lateralis (Calf)",
+  ch4: "Tibialis Anterior (TA)",
 };
 export const CHANNEL_COLORS: Record<Channel, string> = {
   ch1: "var(--neon-green)",

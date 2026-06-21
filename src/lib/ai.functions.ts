@@ -59,7 +59,7 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
       const ai = new GoogleGenAI({ apiKey: geminiKey });
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: "gemini-3.5-flash",
           contents: prompt,
           config: {
             systemInstruction: "You are a precise biomedical signal-processing assistant.",
@@ -80,7 +80,7 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
           Authorization: `Bearer ${lovableKey}`,
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model: "google/gemini-3.5-flash",
           messages: [
             {
               role: "system",

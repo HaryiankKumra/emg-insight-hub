@@ -24,7 +24,7 @@ export function EmgStoreProvider({ children }: { children: ReactNode }) {
   // Initialize store with a default mock leg dataset to showcase Leg EMG waveforms on first load
   const [datasets, setDatasets] = useState<EmgDataset[]>(() => {
     const demo = generateMockDataset({ seconds: 20 });
-    demo.name = "Leg EMG Wireless Data - TA/Calf/Quad/Hamstring";
+    demo.name = "Leg EMG Wireless Data - Quad/Hamstring/Calf/TA";
     return [demo];
   });
   const [activeId, setActiveId] = useState<string | null>(() => datasets[0]?.id ?? null);

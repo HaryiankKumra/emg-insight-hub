@@ -13,6 +13,7 @@ import {
   Radio,
   Download,
   Trash2,
+  Gamepad2,
 } from "lucide-react";
 import {
   LineChart,
@@ -59,17 +60,30 @@ import { Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { RecordView } from "@/components/emg/RecordView";
+import { GameView } from "@/components/emg/GameView";
 
-type View = "dashboard" | "upload" | "signal" | "frequency" | "compare" | "explorer" | "report";
+type View =
+  | "dashboard"
+  | "record"
+  | "game"
+  | "upload"
+  | "signal"
+  | "frequency"
+  | "compare"
+  | "explorer"
+  | "report";
 
 const NAV: { id: View; label: string; icon: typeof Activity; code: string }[] = [
   { id: "dashboard", label: "Overview", icon: Activity, code: "F1" },
-  { id: "upload", label: "Upload", icon: Upload, code: "F2" },
-  { id: "signal", label: "Signal Analysis", icon: Waves, code: "F3" },
-  { id: "frequency", label: "Frequency", icon: BarChart3, code: "F4" },
-  { id: "compare", label: "Comparison", icon: GitCompareArrows, code: "F5" },
-  { id: "explorer", label: "Datasets", icon: Database, code: "F6" },
-  { id: "report", label: "Report", icon: FileText, code: "F7" },
+  { id: "record", label: "Acquisition", icon: Radio, code: "F2" },
+  { id: "game", label: "MyoHurdle", icon: Gamepad2, code: "F3" },
+  { id: "upload", label: "Upload", icon: Upload, code: "F4" },
+  { id: "signal", label: "Signal Analysis", icon: Waves, code: "F5" },
+  { id: "frequency", label: "Frequency", icon: BarChart3, code: "F6" },
+  { id: "compare", label: "Comparison", icon: GitCompareArrows, code: "F7" },
+  { id: "explorer", label: "Datasets", icon: Database, code: "F8" },
+  { id: "report", label: "Report", icon: FileText, code: "F9" },
 ];
 
 export function Dashboard() {
@@ -91,6 +105,8 @@ function Shell() {
         <Sidebar view={view} setView={setView} />
         <main className="flex-1 overflow-auto p-3">
           {view === "dashboard" && <OverviewView />}
+          {view === "record" && <RecordView />}
+          {view === "game" && <GameView onBackToDashboard={() => setView("dashboard")} />}
           {view === "upload" && <UploadView />}
           {view === "signal" && <SignalView />}
           {view === "frequency" && <FrequencyView />}
