@@ -39,15 +39,23 @@ import {
   energy,
   fftMagnitude,
   mav,
+  qualityFromSnr,
   qualityScore,
   rms,
+  rmsEnvelope,
+  sliceByTime,
+  snrFromBaseline,
   spectralMetrics,
   variance,
   zeroCrossings,
   type Channel,
   type EmgDataset,
+  type EmgSample,
 } from "@/lib/emg/signal";
 import { parseCsvFile } from "@/lib/emg/csv";
+import { analyzeEmg } from "@/lib/ai.functions";
+import { useServerFn } from "@tanstack/react-start";
+import { Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
