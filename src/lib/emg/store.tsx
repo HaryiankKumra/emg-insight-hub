@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { generateMockDataset } from "./mock";
 import type { EmgDataset } from "./signal";
 
 interface StoreCtx {
@@ -16,8 +15,8 @@ interface StoreCtx {
 const Ctx = createContext<StoreCtx | null>(null);
 
 export function EmgStoreProvider({ children }: { children: ReactNode }) {
-  const [datasets, setDatasets] = useState<EmgDataset[]>(() => [generateMockDataset()]);
-  const [activeId, setActiveId] = useState<string | null>(datasets[0]?.id ?? null);
+  const [datasets, setDatasets] = useState<EmgDataset[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {

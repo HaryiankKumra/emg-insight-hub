@@ -48,7 +48,7 @@ import {
   type EmgDataset,
 } from "@/lib/emg/signal";
 import { parseCsvFile } from "@/lib/emg/csv";
-import { generateMockDataset } from "@/lib/emg/mock";
+
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -450,7 +450,8 @@ function UploadView() {
           <Upload className="size-10 text-primary text-glow-green" />
           <p className="mt-3 text-sm">Drop CSV files here, or click to browse</p>
           <p className="text-[11px] text-muted-foreground mt-1">
-            Expected columns: <code>time, ch1, ch2, ch3, ch4</code> (case-insensitive aliases supported)
+            Expected columns: <code>datetime_local, muscle1_raw_mV, muscle2_raw_mV, muscle3_raw_mV, muscle4_raw_mV</code>
+            <br />Comment lines starting with <code>#</code> and empty cells are handled automatically.
           </p>
           <Button
             className="mt-4"
@@ -471,18 +472,13 @@ function UploadView() {
         </div>
       </Panel>
 
-      <Panel title="Quick Actions" className="col-span-12 lg:col-span-4">
-        <div className="flex flex-col gap-2">
-          <Button variant="secondary" onClick={() => addDataset(generateMockDataset({ seed: Date.now() & 0xffff }))}>
-            Generate synthetic dataset
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => addDataset(generateMockDataset({ seconds: 30, seed: 17 }))}
-          >
-            Generate long recording (30s)
-          </Button>
-          <div className="text-[10px] text-muted-foreground border-t border-border pt-2 mt-2">
+      <Panel title="Ingest Notes" className="col-span-12 lg:col-span-4">
+        <div className="flex flex-col gap-2 text-[11px] text-muted-foreground">
+          <div>• Header comments prefixed with <code>#</code> are skipped.</div>
+          <div>• Channels are baseline-centered (per-channel mean removed).</div>
+          <div>• Sample rate is auto-detected from <code>datetime_local</code>.</div>
+          <div>• Empty cells in a channel are treated as zero (post-baseline).</div>
+          <div className="border-t border-border pt-2 mt-1 text-foreground/80">
             All processing runs locally in your browser. No data is uploaded.
           </div>
         </div>
