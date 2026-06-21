@@ -273,13 +273,18 @@ function ScopeChart({
   channels = CHANNELS,
   maxPoints = 1200,
   height = 240,
+  baselineSec,
+  samples,
 }: {
   ds: EmgDataset;
   channels?: Channel[];
   maxPoints?: number;
   height?: number;
+  baselineSec?: number;
+  samples?: EmgSample[];
 }) {
-  const data = useMemo(() => downsample(ds.samples, maxPoints), [ds, maxPoints]);
+  const src = samples ?? ds.samples;
+  const data = useMemo(() => downsample(src, maxPoints), [src, maxPoints]);
   return (
     <div className="relative scope-grid rounded-sm border border-border overflow-hidden" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -296,8 +301,9 @@ function ScopeChart({
           <YAxis
             stroke="var(--color-muted-foreground)"
             tick={{ fontSize: 10 }}
-            width={36}
+            width={42}
             tickFormatter={(v) => v.toFixed(1)}
+            label={{ value: "mV", angle: -90, position: "insideLeft", fontSize: 10, fill: "var(--color-muted-foreground)" }}
           />
           <Tooltip
             contentStyle={{
@@ -307,7 +313,16 @@ function ScopeChart({
               borderRadius: 4,
             }}
             labelFormatter={(l) => `t = ${Number(l).toFixed(3)}s`}
+            formatter={(v: number) => `${v.toFixed(3)} mV`}
           />
+          {baselineSec != null && baselineSec > 0 && (
+            <ReferenceLine
+              x={baselineSec}
+              stroke="var(--neon-magenta)"
+              strokeDasharray="4 3"
+              label={{ value: "EXERCISE →", position: "insideTopRight", fontSize: 10, fill: "var(--neon-magenta)" }}
+            />
+          )}
           {channels.map((ch) => (
             <Line
               key={ch}
@@ -326,44 +341,92 @@ function ScopeChart({
   );
 }
 
+function EnvelopeChart({ ds, baselineSec, height = 220 }: { ds: EmgDataset; baselineSec: number; height?: number }) {
+  const data = useMemo(() => {
+    const win = Math.max(20, Math.floor(ds.sampleRate * 0.1)); // 100ms window
+    const envs = CHANNELS.map((ch) => rmsEnvelope(channelArray(ds, ch), win));
+    const out = ds.samples.map((s, i) => ({
+      t: s.t,
+      ch1: envs[0][i],
+      ch2: envs[1][i],
+      ch3: envs[2][i],
+      ch4: envs[3][i],
+    }));
+    return downsample(out, 1500);
+  }, [ds]);
+
+  return (
+    <div className="relative scope-grid rounded-sm border border-border overflow-hidden" style={{ height }}>
+      <ResponsiveContainer>
+        <LineChart data={data} margin={{ top: 8, right: 12, bottom: 8, left: 4 }}>
+          <CartesianGrid stroke="var(--color-grid)" strokeDasharray="2 4" />
+          <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(v) => `${v.toFixed(1)}s`} stroke="var(--color-muted-foreground)" tick={{ fontSize: 10 }} />
+          <YAxis stroke="var(--color-muted-foreground)" tick={{ fontSize: 10 }} width={42} tickFormatter={(v) => v.toFixed(2)} label={{ value: "RMS mV", angle: -90, position: "insideLeft", fontSize: 10, fill: "var(--color-muted-foreground)" }} />
+          <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 11 }} formatter={(v: number) => `${v.toFixed(3)} mV`} />
+          {baselineSec > 0 && <ReferenceLine x={baselineSec} stroke="var(--neon-magenta)" strokeDasharray="4 3" />}
+          {CHANNELS.map((ch) => (
+            <Line key={ch} type="monotone" dataKey={ch} stroke={CHANNEL_COLORS[ch]} dot={false} strokeWidth={1.4} isAnimationActive={false} name={CHANNEL_LABELS[ch]} />
+          ))}
+          <Legend wrapperStyle={{ fontSize: 10 }} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 /* ===================== Views ===================== */
 
 function OverviewView() {
-  const { active } = useEmgStore();
-  if (!active) return <EmptyState msg="No dataset loaded" />;
+  const { active, baselineSec } = useEmgStore();
+  if (!active) return <EmptyState msg="No dataset loaded — upload a CSV to begin" />;
+
+  const totalSec = active.samples.length / active.sampleRate;
+  const effBase = Math.min(baselineSec, Math.max(0, totalSec - 1));
+  const baseSamples = sliceByTime(active, 0, effBase);
+  const actSamples = sliceByTime(active, effBase, totalSec);
 
   const metrics = CHANNELS.map((ch) => {
-    const arr = channelArray(active, ch);
+    const allArr = channelArray(active, ch);
+    const baseArr = baseSamples.map((s) => s[ch]);
+    const actArr = actSamples.length ? actSamples.map((s) => s[ch]) : allArr;
+    const snrDb = snrFromBaseline(actArr, baseArr.length ? baseArr : actArr);
+    const q = baseArr.length ? qualityFromSnr(snrDb) : qualityScore(actArr);
     return {
       ch,
-      rms: rms(arr),
-      mav: mav(arr),
-      var: variance(arr),
-      energy: energy(arr),
-      zc: zeroCrossings(arr),
-      q: qualityScore(arr),
+      baseRms: rms(baseArr),
+      rms: rms(actArr),
+      mav: mav(actArr),
+      var: variance(actArr),
+      energy: energy(actArr),
+      zc: zeroCrossings(actArr, rms(baseArr) * 1.5 || 0.01),
+      q: { ...q, snrDb },
     };
   });
 
-  const totalSec = active.samples.length / active.sampleRate;
   const avgQ = Math.round(metrics.reduce((s, m) => s + m.q.score, 0) / metrics.length);
+  const strongest = [...metrics].sort((a, b) => b.rms - a.rms)[0];
 
   return (
     <div className="grid grid-cols-12 gap-3 auto-rows-min">
-      <div className="col-span-12 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+      <div className="col-span-12 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
         <Stat label="Channels" value="4" />
         <Stat label="Sample Rate" value={active.sampleRate} unit="Hz" tone="cyan" />
-        <Stat label="Duration" value={totalSec.toFixed(2)} unit="s" tone="amber" />
-        <Stat label="Samples" value={active.samples.length.toLocaleString()} tone="cyan" />
+        <Stat label="Total" value={totalSec.toFixed(1)} unit="s" tone="amber" />
+        <Stat label="Rest" value={effBase.toFixed(0)} unit="s" />
+        <Stat label="Exercise" value={Math.max(0, totalSec - effBase).toFixed(1)} unit="s" tone="amber" />
         <Stat label="Avg Quality" value={`${avgQ}%`} tone={avgQ >= 70 ? "green" : avgQ >= 40 ? "amber" : "magenta"} />
-        <Stat label="Source" value={active.source.toUpperCase()} tone="magenta" />
+        <Stat label="Top Muscle" value={strongest?.ch.toUpperCase() ?? "—"} tone="magenta" />
       </div>
 
-      <Panel title="Live Multi-Channel Scope" className="col-span-12 lg:col-span-8" right={<span className="text-primary">● {active.name}</span>}>
-        <ScopeChart ds={active} height={300} />
+      <Panel
+        title="Live Multi-Channel Scope · raw mV"
+        className="col-span-12 lg:col-span-8"
+        right={<span className="text-[10px] text-muted-foreground"><span className="text-[var(--neon-magenta)]">▮</span> rest/exercise split @ {effBase.toFixed(0)}s</span>}
+      >
+        <ScopeChart ds={active} height={280} baselineSec={effBase} />
       </Panel>
 
-      <Panel title="Channel Quality" className="col-span-12 lg:col-span-4">
+      <Panel title="Channel Quality · rest vs active SNR" className="col-span-12 lg:col-span-4">
         <div className="grid grid-cols-1 gap-2">
           {metrics.map((m) => (
             <div key={m.ch} className="border border-border rounded-sm p-2 bg-background/40">
@@ -386,14 +449,11 @@ function OverviewView() {
                 </span>
               </div>
               <div className="mt-1.5 h-1 bg-border rounded-sm overflow-hidden">
-                <div
-                  className="h-full"
-                  style={{ width: `${m.q.score}%`, background: CHANNEL_COLORS[m.ch] }}
-                />
+                <div className="h-full" style={{ width: `${m.q.score}%`, background: CHANNEL_COLORS[m.ch] }} />
               </div>
               <div className="mt-1.5 grid grid-cols-3 gap-1 text-[10px] text-muted-foreground tabular-nums">
-                <span>RMS {m.rms.toFixed(3)}</span>
-                <span>MAV {m.mav.toFixed(3)}</span>
+                <span>Rest {m.baseRms.toFixed(3)}</span>
+                <span>Act {m.rms.toFixed(3)}</span>
                 <span>SNR {m.q.snrDb.toFixed(1)}dB</span>
               </div>
             </div>
@@ -401,14 +461,26 @@ function OverviewView() {
         </div>
       </Panel>
 
-      <Panel title="RMS · MAV · Energy · Zero-Crossings" className="col-span-12">
+      <Panel title="Activation Envelope · 100ms sliding RMS" className="col-span-12 lg:col-span-8">
+        <EnvelopeChart ds={active} baselineSec={effBase} height={240} />
+      </Panel>
+
+      <AiInsightsPanel
+        className="col-span-12 lg:col-span-4"
+        active={active}
+        baselineSec={effBase}
+        metrics={metrics}
+      />
+
+      <Panel title="Exercise-Window Statistics" className="col-span-12">
         <div className="overflow-x-auto">
           <table className="w-full text-[11px] tabular-nums">
             <thead className="text-[10px] uppercase tracking-widest text-muted-foreground">
               <tr className="border-b border-border">
                 <th className="text-left p-2">Channel</th>
-                <th className="text-right p-2">RMS</th>
-                <th className="text-right p-2">MAV</th>
+                <th className="text-right p-2">Rest RMS (mV)</th>
+                <th className="text-right p-2">Active RMS (mV)</th>
+                <th className="text-right p-2">MAV (mV)</th>
                 <th className="text-right p-2">Variance</th>
                 <th className="text-right p-2">Energy</th>
                 <th className="text-right p-2">Zero Cross</th>
@@ -424,6 +496,7 @@ function OverviewView() {
                       {m.ch.toUpperCase()} · {CHANNEL_LABELS[m.ch]}
                     </span>
                   </td>
+                  <td className="text-right p-2">{m.baseRms.toFixed(4)}</td>
                   <td className="text-right p-2">{m.rms.toFixed(4)}</td>
                   <td className="text-right p-2">{m.mav.toFixed(4)}</td>
                   <td className="text-right p-2">{m.var.toFixed(4)}</td>
@@ -439,6 +512,99 @@ function OverviewView() {
     </div>
   );
 }
+
+type OverviewMetric = {
+  ch: Channel;
+  baseRms: number;
+  rms: number;
+  mav: number;
+  var: number;
+  energy: number;
+  zc: number;
+  q: { score: number; label: string; snrDb: number };
+};
+
+function AiInsightsPanel({
+  active,
+  baselineSec,
+  metrics,
+  className,
+}: {
+  active: EmgDataset;
+  baselineSec: number;
+  metrics: OverviewMetric[];
+  className?: string;
+}) {
+  const analyze = useServerFn(analyzeEmg);
+  const [busy, setBusy] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const totalSec = active.samples.length / active.sampleRate;
+      const chSummaries = metrics.map((m) => {
+        const arr = channelArray(active, m.ch).slice(Math.floor(baselineSec * active.sampleRate));
+        const { freq, mag } = fftMagnitude(arr.length ? arr : channelArray(active, m.ch), active.sampleRate);
+        const s = spectralMetrics(freq, mag);
+        return {
+          channel: m.ch.toUpperCase(),
+          label: CHANNEL_LABELS[m.ch],
+          baseline_rms_mV: +m.baseRms.toFixed(4),
+          active_rms_mV: +m.rms.toFixed(4),
+          active_mav_mV: +m.mav.toFixed(4),
+          snr_db: +m.q.snrDb.toFixed(2),
+          quality_label: m.q.label,
+          mean_freq_hz: +s.meanFreq.toFixed(1),
+          median_freq_hz: +s.medianFreq.toFixed(1),
+          dominant_freq_hz: +s.dominantFreq.toFixed(1),
+        };
+      });
+      const res = await analyze({
+        data: {
+          datasetName: active.name,
+          sampleRate: active.sampleRate,
+          durationSec: totalSec,
+          baselineSec,
+          activeSec: Math.max(0, totalSec - baselineSec),
+          channels: chSummaries,
+        },
+      });
+      setText(res.text);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel
+      title="AI Insights · Lovable AI"
+      className={className}
+      right={
+        <Button size="sm" onClick={run} disabled={busy}>
+          <Sparkles className="size-3.5 mr-1" />
+          {busy ? "Analyzing…" : text ? "Re-analyze" : "Analyze"}
+        </Button>
+      }
+    >
+      <div className="text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/90 overflow-auto" style={{ maxHeight: 320 }}>
+        {err && <div className="text-destructive">{err}</div>}
+        {!text && !err && !busy && (
+          <div className="text-muted-foreground">
+            Sends summary stats (no raw signal) to Lovable AI for an expert review of signal quality, activation, and recommendations.
+          </div>
+        )}
+        {busy && <div className="text-muted-foreground animate-pulse">Consulting model…</div>}
+        {text && <div>{text}</div>}
+      </div>
+    </Panel>
+  );
+}
+
 
 function UploadView() {
   const { addDataset } = useEmgStore();
