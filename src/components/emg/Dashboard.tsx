@@ -664,14 +664,16 @@ function UploadView() {
         </div>
       </Panel>
 
-      <Panel title="Ingest Notes" className="col-span-12 lg:col-span-4">
+      <Panel title="MyoWare 2.0 · Raw Pipeline" className="col-span-12 lg:col-span-4">
         <div className="flex flex-col gap-2 text-[11px] text-muted-foreground">
-          <div>• Header comments prefixed with <code>#</code> are skipped.</div>
-          <div>• Channels are baseline-centered (per-channel mean removed).</div>
-          <div>• Sample rate is auto-detected from <code>datetime_local</code>.</div>
-          <div>• Empty cells in a channel are treated as zero (post-baseline).</div>
+          <div>• Raw mV EMG (AC, biased around VCC/2 on the sensor — DC removed here).</div>
+          <div>• Channels baseline-centered (per-channel mean subtracted).</div>
+          <div>• Sample rate auto-detected from <code>datetime_local</code>.</div>
+          <div>• First <span className="text-primary">Baseline</span> seconds (sidebar slider, default 30 s) = <b>rest</b>; rest of the file = <b>exercise</b>.</div>
+          <div>• Quality / SNR = 20·log₁₀(RMS<sub>active</sub> / RMS<sub>rest</sub>).</div>
+          <div>• Activation envelope = 100 ms sliding RMS.</div>
           <div className="border-t border-border pt-2 mt-1 text-foreground/80">
-            All processing runs locally in your browser. No data is uploaded.
+            Local processing only. Click <b>Analyze</b> to ship summary stats (no raw signal) to Lovable AI.
           </div>
         </div>
       </Panel>
