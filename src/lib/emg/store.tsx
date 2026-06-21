@@ -10,6 +10,8 @@ interface StoreCtx {
   setActive: (id: string) => void;
   theme: "dark" | "light";
   toggleTheme: () => void;
+  baselineSec: number;
+  setBaselineSec: (s: number) => void;
 }
 
 const Ctx = createContext<StoreCtx | null>(null);
@@ -18,6 +20,7 @@ export function EmgStoreProvider({ children }: { children: ReactNode }) {
   const [datasets, setDatasets] = useState<EmgDataset[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [baselineSec, setBaselineSec] = useState<number>(30);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -44,6 +47,8 @@ export function EmgStoreProvider({ children }: { children: ReactNode }) {
     setActive: setActiveId,
     theme,
     toggleTheme: () => setTheme((t) => (t === "dark" ? "light" : "dark")),
+    baselineSec,
+    setBaselineSec,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
