@@ -134,6 +134,7 @@ export function assessEmgSignalQuality(
   signal: number[],
   sampleRate: number,
   minRepDistance: number = 500, // Min ms between reps (default 500ms for controlled exercises)
+  thresholdPercentile: number = 75,
 ): {
   repCount: number;
   windowDurations: number[]; // Duration of each rep window (ms)
@@ -146,9 +147,9 @@ export function assessEmgSignalQuality(
   const { windows, threshold, details: winDetails } = detectActivationWindows(
     signal,
     sampleRate,
-    50, // RMS window (50ms)
-    35, // Percentile threshold (35% balances weak & strong muscles)
-    100, // Min window duration (100ms)
+    150, // RMS window (150ms)
+    thresholdPercentile, // Percentile threshold (e.g. 70 or 75 or 80)
+    150, // Min window duration (150ms)
     minRepDistance, // Gap between windows = gap between reps
   );
 
@@ -271,6 +272,20 @@ export function snrFromBaseline(active: number[], baseline: number[]): number {
   const noiseRms = rms(baseline);
   if (noiseRms <= 1e-9) return sigRms > 0 ? 60 : 0;
   return 20 * Math.log10(sigRms / noiseRms);
+}
+
+export function detectExerciseFromName(name: string): string {
+  const clean = name.toLowerCase().replace(/[^a-z0-9]/g, "_");
+  if (clean.includes("walking")) return "walking";
+  if (clean.includes("cycling")) return "cycling";
+  if (clean.includes("jumping")) return "jumping";
+  if (clean.includes("leg_press") || clean.includes("legpress")) return "leg_press";
+  if (clean.includes("lunge")) return "lunges";
+  if (clean.includes("squat")) return "squats";
+  if (clean.includes("stair_ascent") || clean.includes("stair_asc")) return "stair_ascent";
+  if (clean.includes("stair_descent") || clean.includes("stair_desc")) return "stair_descent";
+  if (clean.includes("calf_raise") || clean.includes("calfraise") || clean.includes("calf")) return "calf_raises";
+  return "lunges"; // Default fallback
 }
 
 // Calculate quality from RAW (unfiltered) dataset using ADAPTIVE baseline detection
@@ -430,7 +445,9 @@ export function calculateQualityFromRaw(
     const snrGrade = qualityFromSnr(snrDb);
 
     // Metric 2: Rep-window based quality (counts actual reps, not peaks)
-    const repQuality = assessEmgSignalQuality(activeValues, fs, 500);
+    const exercise = detectExerciseFromName(rawDs.name);
+    const config = EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG] || EXERCISE_CONFIG.lunges;
+    const repQuality = assessEmgSignalQuality(activeValues, fs, config.minRepGapMs, config.thresholdPct);
 
     // COMBINED ASSESSMENT: Use rep-window assessment (more physiologically accurate)
     let finalLabel: string = repQuality.quality;
