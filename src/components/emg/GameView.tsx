@@ -30,7 +30,6 @@ const LIMB_EXERCISES: Record<string, { value: string; label: string }[]> = {
     { value: "stair_ascent", label: "Stair Ascent" },
     { value: "stair_descent", label: "Stair Descent" },
     { value: "calf_raises", label: "Calf Raises" },
-    { value: "leg_curl", label: "Leg Curl" },
     { value: "lunges", label: "Lunges" },
     { value: "leg_press", label: "Leg Press" },
     { value: "squats", label: "Squats" },
@@ -482,7 +481,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         gameRef.current.scrollOffset = offsetAtHurdle;
       } else if (phase === "jumping") {
         gameRef.current.jumpElapsed += dt;
-        const t = Math.min(1.0, gameRef.current.jumpElapsed / 0.515);
+        const t = Math.min(1.0, gameRef.current.jumpElapsed / 0.75); // 0.75s lofty physics jump
         const ease = t * t * (3 - 2 * t);
         gameRef.current.scrollOffset = offsetAtHurdle + (offsetNextResting - offsetAtHurdle) * ease;
       } else if (phase === "hit") {
@@ -508,6 +507,20 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         updateHit(dt);
       }
 
+      // Save current stick man position for trailing ghosts
+      if (!gameRef.current.trailHistory) {
+        gameRef.current.trailHistory = [];
+      }
+      gameRef.current.trailHistory.push({
+        y: gameRef.current.charY,
+        animT: gameRef.current.charAnimT,
+        phase: gameRef.current.phase,
+        hitTimer: gameRef.current.hitTimer
+      });
+      if (gameRef.current.trailHistory.length > 5) {
+        gameRef.current.trailHistory.shift();
+      }
+
       // Draw Panels
       drawGame(dt);
       drawWave();
@@ -523,69 +536,38 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         gameRef.current.threshold * 0.75,
       );
       const rmsVal = Math.round(gameRef.current.liveRms);
+      const aboveThreshold = gameRef.current.liveRms >= relaxThreshold;
 
-      if (gameRef.current.restTimer > 0) {
-        gameRef.current.restTimer -= dt;
-        gameRef.current.relaxTimeHeld = 0;
-        setCdBigText(`${Math.ceil(gameRef.current.restTimer)} s`);
+      if (aboveThreshold) {
+        setCdBigText(`${rmsVal} mV`);
         if (gameRef.current.restTooEarly) {
           setCdSubText("⚠️ TOO EARLY! RELAX YOUR MUSCLE");
           setCdSubColor("#ff3860");
         } else {
-          setCdSubText("🧘 REST & RELAX YOUR MUSCLE");
+          setCdSubText(`🧘 OVER THRESHOLD! RELAX YOUR MUSCLE (Target: <${Math.round(relaxThreshold)} mV)`);
           setCdSubColor("#ffb300");
         }
+        gameRef.current.relaxTimeHeld = 0; // Reset relaxation hold
       } else {
         setCdBigText(`${rmsVal} mV`);
-        if (gameRef.current.restTooEarly) {
-          setCdSubText(`⚠️ RELAX YOUR MUSCLE (Target: <${Math.round(relaxThreshold)} mV)`);
-          setCdSubColor("#ff3860");
-        } else {
-          setCdSubText(`🧘 RELAX YOUR MUSCLE (Target: <${Math.round(relaxThreshold)} mV)`);
-          setCdSubColor("#ffb300");
-        }
+        setCdSubText("✅ RELAXED - GETTING READY");
+        setCdSubColor("#7fffcf");
 
-        // Must sustain relaxation for 200ms
-        if (gameRef.current.liveRms < relaxThreshold) {
-          gameRef.current.relaxTimeHeld += dt;
-          if (gameRef.current.relaxTimeHeld >= 0.2) {
-            beginReadyPhase();
-          }
-        } else {
-          gameRef.current.relaxTimeHeld = 0; // Spike resets relaxation hold
+        gameRef.current.relaxTimeHeld += dt;
+        if (gameRef.current.relaxTimeHeld >= 0.20) {
+          beginApproach(gameRef.current.currentHurdle);
         }
       }
     };
 
     const beginReadyPhase = () => {
-      changePhase("ready");
-      gameRef.current.readyTimer = 1.0;
-      gameRef.current.earlyFlexHeld = 0;
-      gameRef.current.restTooEarly = false;
-      setCdBigText("1");
-      const hIdx = gameRef.current.currentHurdle;
-      setCdSubText(hIdx === 0 ? "GET READY FOR HURDLE 1" : "GET READY FOR NEXT HURDLE");
-      setCdSubColor("#00e5c8");
+      // Skipped countdown, transition immediately to approach
+      beginApproach(gameRef.current.currentHurdle);
     };
 
     const updateReady = (dt: number) => {
-      // Early flex check
-      if (gameRef.current.liveRms >= gameRef.current.threshold) {
-        gameRef.current.earlyFlexHeld += dt;
-        if (gameRef.current.earlyFlexHeld >= 0.12) {
-          beginRestPhase(true);
-          return;
-        }
-      } else {
-        gameRef.current.earlyFlexHeld = 0;
-      }
-
-      gameRef.current.readyTimer -= dt;
-      setCdBigText(Math.max(0, Math.ceil(gameRef.current.readyTimer)).toString());
-
-      if (gameRef.current.readyTimer <= 0) {
-        beginApproach(gameRef.current.currentHurdle);
-      }
+      // Skipped, transition immediately
+      beginApproach(gameRef.current.currentHurdle);
     };
 
     const beginApproach = (hurdleIndex: number) => {
@@ -662,7 +644,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
     const triggerJump = () => {
       changePhase("jumping");
-      gameRef.current.charVy = -490;
+      gameRef.current.charVy = -450; // Loftier physics jump velocity
       gameRef.current.flexThresholdHeld = 0;
       gameRef.current.jumpElapsed = 0;
 
@@ -712,7 +694,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     };
 
     const updateJumping = (dt: number) => {
-      const grav = 1900;
+      const grav = 1200; // Lower gravity for more floaty/dynamic jump feel
       gameRef.current.charVy += grav * dt;
       gameRef.current.charY += gameRef.current.charVy * dt;
       // No longer move charFrac - dino style keeps player centered
@@ -753,7 +735,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
     const beginRestPhase = (tooEarly: boolean) => {
       changePhase("resting");
-      gameRef.current.restTimer = 2.0;
+      gameRef.current.restTimer = 0; // Remove the hard 2.0s countdown!
       gameRef.current.relaxTimeHeld = 0;
       gameRef.current.earlyFlexHeld = 0;
       gameRef.current.restTooEarly = tooEarly;
@@ -832,6 +814,138 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
     // --- Render Elements on Game Canvas ---
 
+    const drawStickMan = (
+      ctx: CanvasRenderingContext2D,
+      cx: number,
+      cy: number,
+      phaseNow: string,
+      charAnimT: number,
+      hitTimer: number,
+      bodyCol: string,
+      lineWidthMultiplier = 1
+    ) => {
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      // Hit rotation
+      if (phaseNow === "hit") {
+        const rot = (1.2 - hitTimer) * Math.PI * 1.5;
+        ctx.rotate(rot * 0.5);
+      }
+
+      ctx.strokeStyle = bodyCol;
+      ctx.fillStyle = `${bodyCol}22`;
+      ctx.lineWidth = 3.2 * lineWidthMultiplier;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+
+      const runCycle = charAnimT * 12;
+
+      // Head
+      let headX = 6;
+      let headY = -35;
+      if (phaseNow === "jumping") {
+        headX = 5;
+        headY = -35;
+      } else if (phaseNow === "hit") {
+        headX = 0;
+        headY = -35;
+      }
+
+      ctx.beginPath();
+      ctx.arc(headX, headY, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Torso/Spine
+      let hipX = 0, hipY = -16;
+      let shoulderX = 4, shoulderY = -28;
+      if (phaseNow === "jumping") {
+        hipX = 0; hipY = -16;
+        shoulderX = 3; shoulderY = -28;
+      } else if (phaseNow === "hit") {
+        hipX = -5; hipY = -14;
+        shoulderX = 2; shoulderY = -26;
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(hipX, hipY);
+      ctx.lineTo(shoulderX, shoulderY);
+      ctx.stroke();
+
+      // Arms
+      ctx.beginPath();
+      if (phaseNow === "jumping") {
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(shoulderX + 6, shoulderY - 8);
+        ctx.lineTo(shoulderX + 12, shoulderY - 14);
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(shoulderX - 6, shoulderY - 8);
+        ctx.lineTo(shoulderX - 12, shoulderY - 14);
+      } else if (phaseNow === "hit") {
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(shoulderX + 10, shoulderY - 2);
+        ctx.lineTo(shoulderX + 15, shoulderY - 8);
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(shoulderX - 10, shoulderY + 4);
+        ctx.lineTo(shoulderX - 15, shoulderY + 8);
+      } else {
+        const arm1ElbowX = shoulderX + 4 + Math.cos(runCycle) * 3;
+        const arm1ElbowY = shoulderY + 4 + Math.sin(runCycle) * 2;
+        const arm1HandX = shoulderX + 8 + Math.cos(runCycle) * 5;
+        const arm1HandY = shoulderY + 8;
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(arm1ElbowX, arm1ElbowY);
+        ctx.lineTo(arm1HandX, arm1HandY);
+
+        const arm2ElbowX = shoulderX - 4 - Math.cos(runCycle) * 3;
+        const arm2ElbowY = shoulderY + 4 - Math.sin(runCycle) * 2;
+        const arm2HandX = shoulderX - 8 - Math.cos(runCycle) * 5;
+        const arm2HandY = shoulderY + 8;
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(arm2ElbowX, arm2ElbowY);
+        ctx.lineTo(arm2HandX, arm2HandY);
+      }
+      ctx.stroke();
+
+      // Legs
+      ctx.beginPath();
+      if (phaseNow === "jumping") {
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(hipX + 6, hipY + 6);
+        ctx.lineTo(hipX + 2, hipY + 12);
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(hipX - 4, hipY + 6);
+        ctx.lineTo(hipX - 8, hipY + 12);
+      } else if (phaseNow === "hit") {
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(hipX + 8, hipY + 6);
+        ctx.lineTo(hipX + 14, hipY + 10);
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(hipX - 8, hipY + 4);
+        ctx.lineTo(hipX - 12, hipY + 8);
+      } else {
+        const leg1KneeX = hipX + 3 + Math.sin(runCycle) * 5;
+        const leg1KneeY = hipY + 8;
+        const leg1FootX = hipX + 2 + Math.sin(runCycle) * 8;
+        const leg1FootY = 0 - Math.max(0, Math.cos(runCycle) * 3);
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(leg1KneeX, leg1KneeY);
+        ctx.lineTo(leg1FootX, leg1FootY);
+
+        const leg2KneeX = hipX - 3 - Math.sin(runCycle) * 5;
+        const leg2KneeY = hipY + 8;
+        const leg2FootX = hipX - 2 - Math.sin(runCycle) * 8;
+        const leg2FootY = 0 - Math.max(0, -Math.cos(runCycle) * 3);
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(leg2KneeX, leg2KneeY);
+        ctx.lineTo(leg2FootX, leg2FootY);
+      }
+      ctx.stroke();
+
+      ctx.restore();
+    };
+
     const drawGame = (dt: number) => {
       const canvas = gameCanvasRef.current;
       if (!canvas) return;
@@ -868,33 +982,44 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
       // === 1. Scope background ===
       const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "#060b15");
-      bg.addColorStop(0.6, "#08111e");
-      bg.addColorStop(1, "#03060c");
+      bg.addColorStop(0, "#050a14");
+      bg.addColorStop(0.6, "#07101c");
+      bg.addColorStop(1, "#020509");
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, w, h);
+
+      // Parallax Stars in the sky
+      ctx.fillStyle = "rgba(0, 229, 200, 0.4)";
+      const starScroll = (gameRef.current.scrollOffset * 0.03) % w;
+      for (let sIdx = 0; sIdx < 25; sIdx++) {
+        const sx = ((sIdx * 83 + 17) % w) - starScroll;
+        const sy = (sIdx * 19 + 11) % (h * 0.65);
+        const starX = sx < 0 ? sx + w : sx;
+        ctx.fillRect(starX, sy, 1.5, 1.5);
+      }
+
+      // Parallax Cyber-Skyline / Mountains
+      const ty = h * 0.72;
+      ctx.strokeStyle = "rgba(0, 229, 200, 0.15)";
+      ctx.lineWidth = 1.5;
+      ctx.fillStyle = "rgba(6, 11, 21, 0.65)";
+      const mountScroll = (gameRef.current.scrollOffset * 0.08) % 360;
+      
+      for (let mIdx = -1; mIdx < (w / 180) + 1; mIdx++) {
+        const mx = mIdx * 180 - mountScroll;
+        ctx.beginPath();
+        ctx.moveTo(mx, ty);
+        ctx.lineTo(mx + 60, ty - 45);
+        ctx.lineTo(mx + 90, ty - 30);
+        ctx.lineTo(mx + 120, ty - 60);
+        ctx.lineTo(mx + 180, ty);
+        ctx.fill();
+        ctx.stroke();
+      }
 
       // CRT scanlines
       ctx.fillStyle = "rgba(0, 229, 200, 0.025)";
       for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
-
-      // Scope grid
-      const grid = 40;
-      ctx.strokeStyle = "rgba(0, 229, 200, 0.07)";
-      ctx.lineWidth = 1;
-      const offsetX = (gameRef.current.scrollOffset || 0) % grid;
-      for (let gx = -offsetX; gx < w; gx += grid) {
-        ctx.beginPath();
-        ctx.moveTo(gx, 0);
-        ctx.lineTo(gx, h);
-        ctx.stroke();
-      }
-      for (let gy = 0; gy < h; gy += grid) {
-        ctx.beginPath();
-        ctx.moveTo(0, gy);
-        ctx.lineTo(w, gy);
-        ctx.stroke();
-      }
 
       // Crosshair
       ctx.strokeStyle = "rgba(0, 229, 200, 0.12)";
@@ -917,14 +1042,38 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       });
 
       // === 2. Ground / horizon ===
-      const ty = h * 0.72;
-
       // Glow under horizon
       const hg = ctx.createLinearGradient(0, ty, 0, h);
-      hg.addColorStop(0, "rgba(0, 229, 200, 0.18)");
+      hg.addColorStop(0, "rgba(0, 229, 200, 0.22)");
       hg.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = hg;
       ctx.fillRect(0, ty, w, h - ty);
+
+      // Cyber-Grid lines radiating from center horizon to bottom edge
+      ctx.strokeStyle = "rgba(0, 229, 200, 0.07)";
+      ctx.lineWidth = 1.2;
+      const numPerspectiveLines = 14;
+      for (let idx = 0; idx <= numPerspectiveLines; idx++) {
+        const xEdge = (idx / numPerspectiveLines) * w;
+        ctx.beginPath();
+        ctx.moveTo(w * 0.5 + (xEdge - w * 0.5) * 0.15, ty);
+        ctx.lineTo(xEdge, h);
+        ctx.stroke();
+      }
+
+      // Horizontal grid lines scrolling towards player
+      ctx.strokeStyle = "rgba(0, 229, 200, 0.09)";
+      ctx.lineWidth = 1;
+      const numHorizontalLines = 8;
+      const gridOffset = (gameRef.current.scrollOffset * 0.25) % 50;
+      for (let idx = 0; idx < numHorizontalLines; idx++) {
+        const frac = (idx / numHorizontalLines);
+        const gridY = ty + (h - ty) * Math.pow(frac, 1.7);
+        ctx.beginPath();
+        ctx.moveTo(0, gridY);
+        ctx.lineTo(w, gridY);
+        ctx.stroke();
+      }
 
       // Horizon line (glowing)
       ctx.shadowColor = NEON;
@@ -947,7 +1096,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       ctx.setLineDash([]);
       ctx.lineDashOffset = 0;
 
-      // === 3. Hurdles (cactus-style neon obelisks scrolling right→left) ===
+      // === 3. Hurdles ===
       const hH = hurdleVisualH(h);
       const hurdleSpacing = 320;
       const hurdleStartX = w * 0.92;
@@ -963,7 +1112,6 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         else if (i === gameRef.current.currentHurdle) state = "current";
 
         if (state === "done") {
-          // Faded green ghost
           ctx.fillStyle = "rgba(127, 255, 207, 0.06)";
           ctx.strokeStyle = "rgba(127, 255, 207, 0.5)";
           ctx.lineWidth = 1.5;
@@ -982,7 +1130,6 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
           ctx.shadowBlur = 0;
         } else if (state === "current") {
           const pulse = 0.6 + 0.4 * Math.sin(now / 220);
-          // Outer glow halo
           ctx.shadowColor = NEON;
           ctx.shadowBlur = 28 * pulse;
           ctx.fillStyle = `rgba(0, 229, 200, ${0.18 * pulse})`;
@@ -993,7 +1140,6 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
           ctx.fill(); ctx.stroke();
           ctx.shadowBlur = 0;
 
-          // Inner band rungs
           ctx.strokeStyle = `rgba(0, 229, 200, ${0.35 * pulse})`;
           ctx.lineWidth = 1;
           for (let b = 1; b < 5; b++) {
@@ -1003,7 +1149,6 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
             ctx.stroke();
           }
 
-          // Hover arrow
           ctx.fillStyle = NEON;
           ctx.shadowColor = NEON; ctx.shadowBlur = 10;
           ctx.font = "bold 14px var(--font-mono)";
@@ -1011,12 +1156,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
           ctx.fillText("▼", hx, top - 8 - Math.sin(now / 200) * 3);
           ctx.shadowBlur = 0;
 
-          // Threshold tag
           ctx.fillStyle = NEON_DIM;
           ctx.font = "bold 9px var(--font-mono)";
           ctx.fillText(`H${i + 1}`, hx, ty + 18);
         } else {
-          // Wireframe future
           ctx.fillStyle = "rgba(255, 255, 255, 0.015)";
           ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
           ctx.lineWidth = 1;
@@ -1043,150 +1186,33 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       else if (phaseNow === "hit") bodyCol = WARN;
 
       ctx.save();
-      ctx.translate(cx, cy);
-
       // Ground shadow
       const shadowScale = Math.max(0.3, 1 - Math.abs(gameRef.current.charY) / 60);
       ctx.fillStyle = `rgba(0, 229, 200, ${0.25 * shadowScale})`;
       ctx.beginPath();
-      ctx.ellipse(0, 2, 16 * shadowScale, 3 * shadowScale, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, ty + 2, 16 * shadowScale, 3 * shadowScale, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
 
-      // Hit rotation
-      if (phaseNow === "hit") {
-        const rot = (1.2 - gameRef.current.hitTimer) * Math.PI * 1.5;
-        ctx.rotate(rot * 0.5);
-        ctx.globalAlpha = Math.max(0.2, gameRef.current.hitTimer / 1.2);
-      }
+      // Draw neon trails first
+      const trails = gameRef.current.trailHistory || [];
+      trails.forEach((trail, idx) => {
+        const alpha = (idx + 1) / (trails.length + 1) * 0.18;
+        const ghostX = cx - (trails.length - idx) * 3;
+        const ghostY = ty + trail.y;
+        
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        drawStickMan(ctx, ghostX, ghostY, trail.phase, trail.animT, trail.hitTimer, bodyCol, 0.7);
+        ctx.restore();
+      });
 
-      // === Stick Man wireframe (neon outline) ===
+      // Draw main stick man
+      ctx.save();
       ctx.shadowColor = bodyCol;
       ctx.shadowBlur = phaseNow === "jumping" ? 24 : 14;
-      ctx.strokeStyle = bodyCol;
-      ctx.fillStyle = `${bodyCol}22`;
-      ctx.lineWidth = 3.2; // robust line weight for a clear stick figure
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-
-      const runCycle = gameRef.current.charAnimT * 12;
-
-      // Define body coordinates relative to (0, 0)
-      // Head (circle)
-      let headX = 6;
-      let headY = -35;
-      if (phaseNow === "jumping") {
-        headX = 5;
-        headY = -35;
-      } else if (phaseNow === "hit") {
-        headX = 0;
-        headY = -35;
-      }
-
-      ctx.beginPath();
-      ctx.arc(headX, headY, 5.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      // Torso/Spine
-      let hipX = 0, hipY = -16;
-      let shoulderX = 4, shoulderY = -28;
-      if (phaseNow === "jumping") {
-        hipX = 0; hipY = -16;
-        shoulderX = 3; shoulderY = -28;
-      } else if (phaseNow === "hit") {
-        hipX = -5; hipY = -14;
-        shoulderX = 2; shoulderY = -26;
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(hipX, hipY);
-      ctx.lineTo(shoulderX, shoulderY);
-      ctx.stroke();
-
-      // Arms
-      ctx.beginPath();
-      if (phaseNow === "jumping") {
-        // Arm 1 (front) - raised high
-        ctx.moveTo(shoulderX, shoulderY);
-        ctx.lineTo(shoulderX + 6, shoulderY - 8);
-        ctx.lineTo(shoulderX + 12, shoulderY - 14);
-        // Arm 2 (back) - raised high
-        ctx.moveTo(shoulderX, shoulderY);
-        ctx.lineTo(shoulderX - 6, shoulderY - 8);
-        ctx.lineTo(shoulderX - 12, shoulderY - 14);
-      } else if (phaseNow === "hit") {
-        // Arm 1 - flailing right
-        ctx.moveTo(shoulderX, shoulderY);
-        ctx.lineTo(shoulderX + 10, shoulderY - 2);
-        ctx.lineTo(shoulderX + 15, shoulderY - 8);
-        // Arm 2 - flailing left
-        ctx.moveTo(shoulderX, shoulderY);
-        ctx.lineTo(shoulderX - 10, shoulderY + 4);
-        ctx.lineTo(shoulderX - 15, shoulderY + 8);
-      } else {
-        // Running arms (swinging back and forth)
-        const arm1ElbowX = shoulderX + 4 + Math.cos(runCycle) * 3;
-        const arm1ElbowY = shoulderY + 4 + Math.sin(runCycle) * 2;
-        const arm1HandX = shoulderX + 8 + Math.cos(runCycle) * 5;
-        const arm1HandY = shoulderY + 8;
-        
-        ctx.moveTo(shoulderX, shoulderY);
-        ctx.lineTo(arm1ElbowX, arm1ElbowY);
-        ctx.lineTo(arm1HandX, arm1HandY);
-
-        const arm2ElbowX = shoulderX - 4 - Math.cos(runCycle) * 3;
-        const arm2ElbowY = shoulderY + 4 - Math.sin(runCycle) * 2;
-        const arm2HandX = shoulderX - 8 - Math.cos(runCycle) * 5;
-        const arm2HandY = shoulderY + 8;
-
-        ctx.moveTo(shoulderX, shoulderY);
-        ctx.lineTo(arm2ElbowX, arm2ElbowY);
-        ctx.lineTo(arm2HandX, arm2HandY);
-      }
-      ctx.stroke();
-
-      // Legs
-      ctx.beginPath();
-      if (phaseNow === "jumping") {
-        // Leg 1 (front) - bent under
-        ctx.moveTo(hipX, hipY);
-        ctx.lineTo(hipX + 6, hipY + 6);
-        ctx.lineTo(hipX + 2, hipY + 12);
-        // Leg 2 (back) - bent under
-        ctx.moveTo(hipX, hipY);
-        ctx.lineTo(hipX - 4, hipY + 6);
-        ctx.lineTo(hipX - 8, hipY + 12);
-      } else if (phaseNow === "hit") {
-        // Leg 1 - flying right
-        ctx.moveTo(hipX, hipY);
-        ctx.lineTo(hipX + 8, hipY + 6);
-        ctx.lineTo(hipX + 14, hipY + 10);
-        // Leg 2 - flying left
-        ctx.moveTo(hipX, hipY);
-        ctx.lineTo(hipX - 8, hipY + 4);
-        ctx.lineTo(hipX - 12, hipY + 8);
-      } else {
-        // Running legs (cycling)
-        const leg1KneeX = hipX + 3 + Math.sin(runCycle) * 5;
-        const leg1KneeY = hipY + 8;
-        const leg1FootX = hipX + 2 + Math.sin(runCycle) * 8;
-        const leg1FootY = 0 - Math.max(0, Math.cos(runCycle) * 3);
-
-        ctx.moveTo(hipX, hipY);
-        ctx.lineTo(leg1KneeX, leg1KneeY);
-        ctx.lineTo(leg1FootX, leg1FootY);
-
-        const leg2KneeX = hipX - 3 - Math.sin(runCycle) * 5;
-        const leg2KneeY = hipY + 8;
-        const leg2FootX = hipX - 2 - Math.sin(runCycle) * 8;
-        const leg2FootY = 0 - Math.max(0, -Math.cos(runCycle) * 3);
-
-        ctx.moveTo(hipX, hipY);
-        ctx.lineTo(leg2KneeX, leg2KneeY);
-        ctx.lineTo(leg2FootX, leg2FootY);
-      }
-      ctx.stroke();
-
+      drawStickMan(ctx, cx, cy, phaseNow, gameRef.current.charAnimT, gameRef.current.hitTimer, bodyCol, 1);
+      ctx.shadowBlur = 0;
       ctx.restore();
 
       // === 5. Particles ===

@@ -1196,33 +1196,52 @@ function ReportView() {
       // Wait for all charts to render
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Create a clone to avoid side effects
+      // Create a clone to avoid side effects and style it off-screen
+      const originalWidth = el.clientWidth || 800;
       const clone = el.cloneNode(true) as HTMLElement;
-      document.body.appendChild(clone);
+      clone.style.position = "absolute";
+      clone.style.left = "-9999px";
+      clone.style.top = "0px";
+      clone.style.width = `${originalWidth}px`;
+      clone.style.backgroundColor = "#0d121b";
       
-      // Remove oklch color functions that html2canvas doesn't support
-      const removeOklchColors = (el: Element) => {
-        const style = window.getComputedStyle(el);
-        const elem = el as HTMLElement;
+      // Inline resolved computed styles recursively
+      const inlineStyles = (original: Element, cloneNode: Element) => {
+        const style = window.getComputedStyle(original);
+        const cloneHtml = cloneNode as HTMLElement;
         
-        // Strip oklch from inline styles
-        if (elem.style.color) {
-          elem.style.color = elem.style.color.replace(/oklch\([^)]+\)/g, "#0d121b");
-        }
-        if (elem.style.backgroundColor) {
-          elem.style.backgroundColor = elem.style.backgroundColor.replace(/oklch\([^)]+\)/g, "#0d121b");
-        }
-        if (elem.style.borderColor) {
-          elem.style.borderColor = elem.style.borderColor.replace(/oklch\([^)]+\)/g, "#999");
+        if (style.color) cloneHtml.style.color = style.color;
+        if (style.backgroundColor) cloneHtml.style.backgroundColor = style.backgroundColor;
+        if (style.borderColor) cloneHtml.style.borderColor = style.borderColor;
+        
+        // Inline SVG styling attributes
+        const tagName = original.tagName.toLowerCase();
+        if (["path", "line", "rect", "circle", "polygon"].includes(tagName)) {
+          const stroke = style.stroke;
+          const fill = style.fill;
+          if (stroke && stroke !== "none") {
+            cloneNode.setAttribute("stroke", stroke);
+          }
+          if (fill && fill !== "none") {
+            cloneNode.setAttribute("fill", fill);
+          }
         }
         
-        // Recursively process children
-        for (let i = 0; i < el.children.length; i++) {
-          removeOklchColors(el.children[i]);
+        // Copy chart grid line strokes explicitly
+        if (original.classList.contains("recharts-cartesian-grid-horizontal") || 
+            original.classList.contains("recharts-cartesian-grid-vertical")) {
+          cloneNode.setAttribute("stroke", style.stroke || "rgba(255,255,255,0.1)");
+        }
+        
+        const originalChildren = Array.from(original.children);
+        const cloneChildren = Array.from(cloneNode.children);
+        for (let i = 0; i < originalChildren.length && i < cloneChildren.length; i++) {
+          inlineStyles(originalChildren[i], cloneChildren[i]);
         }
       };
       
-      removeOklchColors(clone);
+      inlineStyles(el, clone);
+      document.body.appendChild(clone);
       
       // Capture with robust settings
       const canvas = await html2canvas(clone, { 
@@ -1232,8 +1251,8 @@ function ReportView() {
         useCORS: true,
         logging: false,
         imageTimeout: 15000,
-        windowHeight: clone.scrollHeight,
-        windowWidth: clone.scrollWidth,
+        width: originalWidth,
+        windowWidth: originalWidth,
       });
       
       document.body.removeChild(clone);

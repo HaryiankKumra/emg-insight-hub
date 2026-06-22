@@ -515,10 +515,15 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, exercise: e.target.value }; saveMetaCache(n); return n; }); }}
                 className="w-full bg-[#090d16] border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50"
               >
+                <option value="walking">Walking</option>
+                <option value="stair_ascent">Stair Ascent</option>
+                <option value="stair_descent">Stair Descent</option>
                 <option value="calf_raises">Calf Raises</option>
+                <option value="lunges">Lunges</option>
+                <option value="leg_press">Leg Press</option>
                 <option value="squats">Squats</option>
                 <option value="jumping">Jumping</option>
-                <option value="walking">Walking</option>
+                <option value="cycling">Cycling</option>
               </select>
             </div>
             <div className="space-y-1 sm:col-span-1">
