@@ -281,9 +281,11 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     waveHistories: { 1: [], 2: [], 3: [], 4: [] } as Record<number, number[]>,
     waveHistoryCombined: [] as number[],
     sessionStartTime: 0,
+    sessionEndTime: 0, // frozen at completeSession/stop
     sessionTimeLimit: 5, // in minutes
     sessionElapsedTime: 0, // in seconds
     scrollOffset: 0, // Dino-style: how far we've scrolled through hurdles (pixels)
+    scrollSpeed: 60, // px/sec continuous background scroll
     width: 0,
     height: 0,
     threshold: 30,
