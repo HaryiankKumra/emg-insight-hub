@@ -1392,13 +1392,13 @@ function ReportView() {
                         <AreaChart data={fftData} margin={{ top: 4, right: 8, bottom: 4, left: 4 }}>
                           <defs>
                             <linearGradient id={`fftGrad-${m.ch}`} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor={CHANNEL_COLORS[m.ch as Channel]?.line} stopOpacity={0.8} />
-                              <stop offset="95%" stopColor={CHANNEL_COLORS[m.ch as Channel]?.fill} stopOpacity={0.1} />
+                              <stop offset="5%" stopColor={CHANNEL_COLORS[m.ch as Channel]} stopOpacity={0.8} />
+                              <stop offset="95%" stopColor={CHANNEL_COLORS[m.ch as Channel]} stopOpacity={0.1} />
                             </linearGradient>
                           </defs>
                           <XAxis dataKey="f" hide={true} />
                           <YAxis hide={true} />
-                          <Area type="monotone" dataKey="mag" stroke={CHANNEL_COLORS[m.ch as Channel]?.line} fill={`url(#fftGrad-${m.ch})`} isAnimationActive={false} />
+                          <Area type="monotone" dataKey="mag" stroke={CHANNEL_COLORS[m.ch as Channel]} fill={`url(#fftGrad-${m.ch})`} isAnimationActive={false} />
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
