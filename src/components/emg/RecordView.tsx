@@ -136,7 +136,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
     } catch (e) {}
   };
 
-  // Rendering Loop for the 4 separate scrolling canvases
+  // Rendering Loop for the 4 separate scrolling canvases with axis labels
   useEffect(() => {
     let animFrameId: number;
 
@@ -149,30 +149,24 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
-        const w = canvas.clientWidth;
+        // Dynamic width: expand for long recordings (> 30 seconds)
+        let displayWidth = canvas.clientWidth;
+        if (recordDuration > 30) {
+          // Scale canvas to fit more data: 1 pixel per sample point roughly
+          displayWidth = Math.max(canvas.clientWidth, recordDuration * 10); // 10px per second
+        }
+
         const h = canvas.clientHeight;
 
         const dpr = window.devicePixelRatio || 1;
-        if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-          canvas.width = w * dpr;
+        if (canvas.width !== displayWidth * dpr || canvas.height !== h * dpr) {
+          canvas.width = displayWidth * dpr;
           canvas.height = h * dpr;
         }
         ctx.resetTransform();
         ctx.scale(dpr, dpr);
 
-        ctx.clearRect(0, 0, w, h);
-
-        // Draw horizontal grid lines
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
-        ctx.lineWidth = 1;
-        const lines = 4;
-        for (let i = 0; i <= lines; i++) {
-          const y = (h / lines) * i;
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(w, y);
-          ctx.stroke();
-        }
+        ctx.clearRect(0, 0, displayWidth, h);
 
         const chId = idx + 1;
         const snap = serialManager.getLiveChannelSnapshot(chId);
@@ -194,16 +188,77 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
           yMax = Math.min(3300, max + pad);
         }
 
-        const stepX = w / 500; // fit 500 points in width
+        // Calculate nice axis steps
+        const yRange = yMax - yMin;
+        let yStep = 100; // Default step
+        if (yRange > 2000) yStep = 500;
+        else if (yRange > 1000) yStep = 200;
+        else if (yRange > 500) yStep = 100;
+        else yStep = 50;
+
+        // Reserve space for axes
+        const leftMargin = 50;
+        const bottomMargin = 30;
+        const plotW = displayWidth - leftMargin;
+        const plotH = h - bottomMargin;
+
+        // Draw horizontal grid lines and Y-axis labels
+        ctx.font = "11px monospace";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.textAlign = "right";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+        ctx.lineWidth = 1;
+
+        for (let yVal = Math.ceil(yMin / yStep) * yStep; yVal <= yMax; yVal += yStep) {
+          const yPx = plotH - ((yVal - yMin) / (yMax - yMin || 1)) * plotH;
+          
+          // Draw grid line
+          ctx.beginPath();
+          ctx.moveTo(leftMargin, yPx);
+          ctx.lineTo(displayWidth, yPx);
+          ctx.stroke();
+          
+          // Draw label
+          ctx.fillText(`${Math.round(yVal)}mV`, leftMargin - 5, yPx + 4);
+        }
+
+        // Draw Y-axis
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(leftMargin, 0);
+        ctx.lineTo(leftMargin, plotH);
+        ctx.stroke();
+
+        // Draw X-axis
+        ctx.beginPath();
+        ctx.moveTo(leftMargin, plotH);
+        ctx.lineTo(displayWidth, plotH);
+        ctx.stroke();
+
+        // Draw time axis labels at bottom
+        ctx.font = "10px monospace";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.textAlign = "center";
+        const timeStep = Math.ceil(snap.samples.length / 5); // Show ~5 time labels
+        const sampleRate = snap.sampleRate || 1000;
+        
+        for (let i = 0; i < snap.samples.length; i += timeStep) {
+          const px = leftMargin + (i / 500) * plotW;
+          const timeMs = (i / sampleRate) * 1000;
+          ctx.fillText(`${timeMs.toFixed(0)}ms`, px, plotH + 20);
+        }
+
+        // Draw signal
+        const stepX = plotW / 500;
 
         ctx.strokeStyle = color.line;
         ctx.lineWidth = 1.6;
         ctx.beginPath();
 
         for (let i = 0; i < data.length; i++) {
-          const px = i * stepX;
-          // Map value from [yMin, yMax] to [h, 0]
-          const py = h - ((data[i] - yMin) / (yMax - yMin || 1)) * h;
+          const px = leftMargin + (i * stepX);
+          const py = plotH - ((data[i] - yMin) / (yMax - yMin || 1)) * plotH;
 
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
@@ -211,10 +266,10 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
         ctx.stroke();
 
         // Draw gradient fill below path
-        ctx.lineTo((data.length - 1) * stepX, h);
-        ctx.lineTo(0, h);
+        ctx.lineTo(leftMargin + (data.length - 1) * stepX, plotH);
+        ctx.lineTo(leftMargin, plotH);
         ctx.closePath();
-        const fillGrad = ctx.createLinearGradient(0, 0, 0, h);
+        const fillGrad = ctx.createLinearGradient(0, 0, 0, plotH);
         fillGrad.addColorStop(0, color.fill);
         fillGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = fillGrad;
@@ -229,7 +284,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
     return () => {
       cancelAnimationFrame(animFrameId);
     };
-  }, [autoScale, connected]);
+  }, [autoScale, connected, recordDuration]);
 
   const handleConnect = async () => {
     try {
@@ -600,9 +655,11 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
                   </div>
                 </header>
 
-                {/* Oscilloscope scrolling waveform trace */}
-                <div className="h-[140px] bg-black/40 border border-border/40 rounded-sm relative overflow-hidden">
-                  <canvas ref={ref} className="w-full h-full block" />
+                {/* Oscilloscope scrolling waveform trace with optional horizontal scroll for long recordings */}
+                <div className={`h-[140px] bg-black/40 border border-border/40 rounded-sm relative ${recordDuration > 30 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-hidden'}`}>
+                  <div className={recordDuration > 30 ? 'min-w-full' : 'w-full'}>
+                    <canvas ref={ref} className={`${recordDuration > 30 ? 'w-full min-w-max' : 'w-full'} h-full block`} />
+                  </div>
                   {!connected && (
                     <div className="absolute inset-0 grid place-items-center text-[9px] font-mono uppercase tracking-widest text-muted-foreground/30">
                       Channel Stream Idle

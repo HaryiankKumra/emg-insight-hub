@@ -195,6 +195,11 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
   const [trialNo, setTrialNo] = useState(1);
   const [numHurdles, setNumHurdles] = useState(10);
   const [attemptTimeLimit, setAttemptTimeLimit] = useState(5);
+  const [sessionTimeLimit, setSessionTimeLimit] = useState(5); // Session total time limit in minutes
+  const [sessionTimeRemaining, setSessionTimeRemaining] = useState(5 * 60); // Remaining time in seconds
+  const [countdownDisplay, setCountdownDisplay] = useState<string>("0.0"); // Timer countdown display (5.0, 4.9, 4.8...)
+  const [showStopButton, setShowStopButton] = useState(false); // Show stop button during game
+  const [gameScale, setGameScale] = useState(1.0); // For zoom-in animation on start
   const [activeChannels, setActiveChannels] = useState<number[]>([1]); // [0] = Auto, [1..4]
   const [combMode, setCombMode] = useState<"avg" | "max" | "min">("avg");
   const [anatomyZoom, setAnatomyZoom] = useState(1.0);
@@ -276,6 +281,9 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     waveHistories: { 1: [], 2: [], 3: [], 4: [] } as Record<number, number[]>,
     waveHistoryCombined: [] as number[],
     sessionStartTime: 0,
+    sessionTimeLimit: 5, // in minutes
+    sessionElapsedTime: 0, // in seconds
+    scrollOffset: 0, // Dino-style: how far we've scrolled through hurdles (pixels)
     width: 0,
     height: 0,
     threshold: 30,
@@ -295,9 +303,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     gameRef.current.baseline = baseline;
     gameRef.current.numHurdles = numHurdles;
     gameRef.current.attemptTimeLimit = attemptTimeLimit;
+    gameRef.current.sessionTimeLimit = sessionTimeLimit;
     gameRef.current.activeChannels = activeChannels;
     gameRef.current.combMode = combMode;
-  }, [threshold, baseline, numHurdles, attemptTimeLimit, activeChannels, combMode]);
+  }, [threshold, baseline, numHurdles, attemptTimeLimit, sessionTimeLimit, activeChannels, combMode]);
 
   // Handle Serial Subscriptions
   useEffect(() => {
@@ -432,6 +441,21 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       if (combinedHist.length > maxPts) combinedHist.shift();
       gameRef.current.waveHistoryCombined = combinedHist;
 
+      // Track session elapsed time
+      if (gameRef.current.sessionStartTime > 0 && gameRef.current.phase !== "setup" && gameRef.current.phase !== "calibrating") {
+        const elapsedSeconds = (Date.now() - gameRef.current.sessionStartTime) / 1000;
+        gameRef.current.sessionElapsedTime = elapsedSeconds;
+        
+        const sessionTimeSeconds = gameRef.current.sessionTimeLimit * 60;
+        const remainingSeconds = Math.max(0, sessionTimeSeconds - elapsedSeconds);
+        setSessionTimeRemaining(remainingSeconds);
+
+        // Check if session time limit exceeded
+        if (elapsedSeconds >= sessionTimeSeconds && gameRef.current.phase !== "results") {
+          completeSession();
+        }
+      }
+
       // Update Phase Logic
       const phase = gameRef.current.phase;
       if (phase === "setup") {
@@ -534,13 +558,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       changePhase("approaching");
       gameRef.current.earlyFlexHeld = 0;
       gameRef.current.approachT = 0;
-      gameRef.current.approachStartFrac = gameRef.current.charFrac;
-
-      const nextHFrac = (hurdleIndex + 1) / (gameRef.current.numHurdles + 1);
-      gameRef.current.approachTargetFrac = Math.max(gameRef.current.charFrac, nextHFrac - 0.018);
-
-      const dist = Math.abs(gameRef.current.approachTargetFrac - gameRef.current.charFrac);
-      gameRef.current.approachDur = Math.max(0.6, dist * (gameRef.current.numHurdles + 1) * 1.4);
+      // Dino-style: no charFrac movement needed
     };
 
     const updateApproaching = (dt: number) => {
@@ -556,15 +574,8 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       }
 
       gameRef.current.approachT += dt;
-      let t = Math.min(gameRef.current.approachT / gameRef.current.approachDur, 1);
-      // Ease in-out
-      t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-      gameRef.current.charFrac =
-        gameRef.current.approachStartFrac +
-        (gameRef.current.approachTargetFrac - gameRef.current.approachStartFrac) * t;
-
-      if (gameRef.current.approachT >= gameRef.current.approachDur) {
+      // In dino-style, we don't move character - just wait
+      if (gameRef.current.approachT >= 0.6) {
         beginAtHurdle();
       }
     };
@@ -593,6 +604,11 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         gameRef.current.currentPeakEMG = gameRef.current.liveRms;
       }
 
+      // Update countdown display (5.0, 4.9, 4.8...)
+      const elapsed = (Date.now() - gameRef.current.currentAttemptStart) / 1000;
+      const remaining = Math.max(0, gameRef.current.attemptTimeLimit - elapsed);
+      setCountdownDisplay(remaining.toFixed(1));
+
       // Threshold crossing constraint check (hold 120ms to prevent high-freq spikes)
       if (gameRef.current.liveRms >= gameRef.current.threshold) {
         gameRef.current.flexThresholdHeld += dt;
@@ -605,8 +621,6 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       }
 
       // Timer countdown check
-      const elapsed = (Date.now() - gameRef.current.currentAttemptStart) / 1000;
-      const remaining = Math.max(0, gameRef.current.attemptTimeLimit - elapsed);
       if (remaining <= 0) {
         triggerHit();
       }
@@ -622,13 +636,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       const hIdx = gameRef.current.currentHurdle;
       gameRef.current.hurdleLog[hIdx].attempts.push(attempt);
 
+      // Dino-style: scroll forward when success
+      gameRef.current.scrollOffset += 80;
+
       // Flash & particles
       const canvas = gameCanvasRef.current;
       if (canvas) {
         const w = canvas.width / (window.devicePixelRatio || 1);
         const h = canvas.height / (window.devicePixelRatio || 1);
-        const nextHFrac = (hIdx + 1) / (gameRef.current.numHurdles + 1);
-        const hx = w * 0.06 + w * (0.94 - 0.06) * nextHFrac;
+        const hx = w / 2; // Center of screen
         const ty = h * 0.7;
         addParticles(hx, ty - hurdleVisualH(h) / 2, "#00c97a", 18, 1.2);
       }
@@ -647,6 +663,9 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       const hIdx = gameRef.current.currentHurdle;
       gameRef.current.hurdleLog[hIdx].attempts.push(attempt);
 
+      // Dino-style: scroll backward (rewind) when fail
+      gameRef.current.scrollOffset = Math.max(0, gameRef.current.scrollOffset - 40);
+
       // Shake & particles
       gameRef.current.shake = { x: 0, y: 0, t: 0.35, mag: 10 };
 
@@ -654,8 +673,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       if (canvas) {
         const w = canvas.width / (window.devicePixelRatio || 1);
         const h = canvas.height / (window.devicePixelRatio || 1);
-        const nextHFrac = (hIdx + 1) / (gameRef.current.numHurdles + 1);
-        const hx = w * 0.06 + w * (0.94 - 0.06) * nextHFrac;
+        const hx = w / 2; // Center of screen
         const ty = h * 0.7;
         addParticles(hx, ty - 20, "#ff3860", 12, 0.9);
       }
@@ -668,7 +686,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       const grav = 1900;
       gameRef.current.charVy += grav * dt;
       gameRef.current.charY += gameRef.current.charVy * dt;
-      gameRef.current.charFrac += 0.7 * dt * (1 / (gameRef.current.numHurdles + 1));
+      // No longer move charFrac - dino style keeps player centered
 
       if (gameRef.current.charY >= 0) {
         gameRef.current.charY = 0;
@@ -680,10 +698,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     const updateHit = (dt: number) => {
       gameRef.current.hitTimer -= dt;
       if (gameRef.current.hitTimer <= 0) {
-        // Reset player fraction back slightly and enforce rest phase to prevent automatic passing
-        const hIdx = gameRef.current.currentHurdle;
-        const prevFrac = (hIdx + 1) / (gameRef.current.numHurdles + 1) - 0.15;
-        gameRef.current.charFrac = Math.max(0, prevFrac);
+        // Dino-style: no charFrac needed - just move to rest phase
         beginRestPhase(false);
       }
     };
@@ -717,6 +732,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
     const completeSession = () => {
       changePhase("results");
+      setShowStopButton(false);
 
       // Stop serialManager recording automatically if recording was active
       if (serialManager.getIsRecording()) {
@@ -877,14 +893,22 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       ctx.fillText("START", tx + 2, ty + 18);
       ctx.fillText("FINISH", tr - 2, ty + 18);
 
-      // 3. Draw Hurdles
+      // 3. Draw Hurdles (Dino-style: hurdles scroll from right to left)
       const hH = hurdleVisualH(h);
       const now = Date.now();
+      const hurdleSpacing = 120; // pixels between hurdles
+      const hurdleStartX = w * 0.9; // Where hurdles start (right side)
+      const hw = 12;
+      
       for (let i = 0; i < gameRef.current.numHurdles; i++) {
-        const nextHFrac = (i + 1) / (gameRef.current.numHurdles + 1);
-        const hx = tx + (tr - tx) * nextHFrac;
+        // Position based on scrollOffset
+        const hurdleBaseX = hurdleStartX + i * hurdleSpacing;
+        const hx = hurdleBaseX - gameRef.current.scrollOffset;
+        
+        // Skip if off-screen
+        if (hx < -20 || hx > w + 20) continue;
+        
         const top = ty - hH;
-        const hw = 12;
 
         let state = "future";
         if (i < gameRef.current.currentHurdle) state = "done";
@@ -958,9 +982,9 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         }
       }
 
-      // 4. Draw character
+      // 4. Draw character (centered on screen in dino-style)
       gameRef.current.charAnimT += dt;
-      const cx = tx + (tr - tx) * gameRef.current.charFrac;
+      const cx = w / 2; // Keep centered
       const cy = ty - 36 + gameRef.current.charY;
 
       let color = "#00e5c8";
@@ -1498,6 +1522,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     gameRef.current.particles = [];
     gameRef.current.hurdleLog = [];
     gameRef.current.sessionStartTime = Date.now();
+    gameRef.current.sessionTimeLimit = sessionTimeLimit;
+    gameRef.current.sessionElapsedTime = 0;
+    gameRef.current.scrollOffset = 0; // Reset scroll for new game
+    setSessionTimeRemaining(sessionTimeLimit * 60);
+    
+    // Zoom-in animation
+    setGameScale(0.7);
+    setTimeout(() => setGameScale(1.0), 800);
+    setShowStopButton(true);
 
     // Start ESP32 Stream recording if connected
     if (connected) {
@@ -1529,7 +1562,23 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       serialManager.stopRecording(false);
     }
     setCalibrated(false);
+    setShowStopButton(false);
+    setGameScale(1.0);
     changePhase("setup");
+  };
+
+  const handleStopGame = () => {
+    // Stop game immediately and show results
+    setShowStopButton(false);
+    changePhase("results");
+    
+    // Stop serialManager recording
+    if (serialManager.getIsRecording()) {
+      const dataset = serialManager.stopRecording(true);
+      if (dataset) {
+        addDataset(dataset);
+      }
+    }
   };
 
   // --- CSV / JSON Data Exporters ---
@@ -1557,14 +1606,18 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         trial_no: trialNo,
         numHurdles: gameRef.current.numHurdles,
         attemptTimeLimit_s: gameRef.current.attemptTimeLimit,
+        sessionTimeLimit_min: gameRef.current.sessionTimeLimit,
         threshold_mV: threshold,
         baseline_mV: baseline,
       },
       summary: {
+        completedHurdles: gameRef.current.currentHurdle,
+        totalHurdles: gameRef.current.numHurdles,
+        completionPercentage: Math.round((gameRef.current.currentHurdle / gameRef.current.numHurdles) * 100),
         totalAttempts: totalAttemptsCount,
         totalTime_s: Math.round(totalTimeSec * 100) / 100,
         efficiency_pct:
-          Math.round((numHurdles / Math.max(totalAttemptsCount, 1)) * 100 * 100) / 100,
+          Math.round((gameRef.current.currentHurdle / Math.max(totalAttemptsCount, 1)) * 100 * 100) / 100,
       },
       hurdles: gameRef.current.hurdleLog
         .map((h, i) => {
@@ -1728,8 +1781,16 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
   return (
     <div className="relative min-h-full flex flex-col bg-background text-foreground rounded-lg overflow-hidden border border-border">
       {/* 60 FPS Game Runner Screen */}
-      <div className="relative w-full h-[220px] shrink-0 border-b border-border select-none">
-        <canvas ref={gameCanvasRef} className="w-full h-full block" />
+      <div className="relative w-full h-[220px] shrink-0 border-b border-border select-none flex items-center justify-center overflow-hidden">
+        <div style={{
+          transform: `scale(${gameScale})`,
+          transformOrigin: 'center',
+          width: '100%',
+          height: '100%',
+          transition: 'transform 0.8s ease-out'
+        }}>
+          <canvas ref={gameCanvasRef} className="w-full h-full block" />
+        </div>
 
         {/* Back navigation & sync pill */}
         {onBackToDashboard && (
@@ -1747,6 +1808,16 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
           />
           <span>{connected ? "EMG LINKED" : "OFFLINE"}</span>
         </div>
+
+        {/* Stop button during gameplay */}
+        {showStopButton && phase !== "setup" && phase !== "calibrating" && phase !== "results" && (
+          <button
+            onClick={handleStopGame}
+            className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-destructive/20 hover:bg-destructive/40 border border-destructive/50 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors z-20 text-destructive"
+          >
+            <Square className="size-3" /> Stop
+          </button>
+        )}
       </div>
 
       {/* Screen flash on hit/success */}
@@ -2019,14 +2090,14 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                     <input
                       type="range"
                       min={1}
-                      max={30}
+                      max={50}
                       value={numHurdles}
                       onChange={(e) => setNumHurdles(parseInt(e.target.value))}
                       className="w-full accent-primary"
                     />
                   </div>
 
-                  {/* Time limit slider */}
+                  {/* Attempt Time Limit slider */}
                   <div className="space-y-1">
                     <div className="flex justify-between items-center text-[9px] uppercase tracking-widest text-muted-foreground">
                       <label>Attempt Time Limit</label>
@@ -2038,6 +2109,22 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       max={15}
                       value={attemptTimeLimit}
                       onChange={(e) => setAttemptTimeLimit(parseInt(e.target.value))}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+
+                  {/* Session Time Limit slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[9px] uppercase tracking-widest text-muted-foreground">
+                      <label>Session Time Limit</label>
+                      <span className="text-primary font-bold">{sessionTimeLimit} min</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={30}
+                      value={sessionTimeLimit}
+                      onChange={(e) => setSessionTimeLimit(parseInt(e.target.value))}
                       className="w-full accent-primary"
                     />
                   </div>
@@ -2196,7 +2283,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   </button>
                 </header>
 
-                <div className="flex justify-center items-center py-4 bg-black/40 border border-border rounded-sm relative mb-4">
+                <div className="flex justify-center items-center py-4 bg-black/40 border border-border rounded-sm relative mb-4 overflow-hidden" style={{minHeight: '400px'}}>
                   <canvas ref={anatomyCanvasRef} className="w-[220px] h-[320px] block" />
                 </div>
 
@@ -2229,7 +2316,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
             </div>
 
             {/* Launch button */}
-            <div className="col-span-12 mt-2">
+            <div className="col-span-12 mt-3 px-3">
               <Button
                 onClick={beginProtocol}
                 disabled={!calibrated}
@@ -2326,12 +2413,20 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 <h3 className="font-mono text-xs font-bold tracking-widest text-foreground/90">
                   HURDLE {currentHurdle + 1} / {numHurdles}
                 </h3>
+                <div className="font-mono text-[9px] text-muted-foreground mt-1">
+                  Time: {Math.max(0, sessionTimeRemaining).toFixed(1)}s / {sessionTimeLimit * 60}s
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[9px] font-bold text-orange-400 bg-orange-400/10 border border-orange-400/25 px-2.5 py-0.5 rounded-full uppercase tracking-widest">
                   Attempt {totalAttempts}
                 </span>
+
+                {/* Large countdown timer display */}
+                <div className="font-mono font-bold text-2xl text-primary text-glow-green ml-auto">
+                  {countdownDisplay}s
+                </div>
 
                 {/* Micro SVG ring timer */}
                 <div className="relative size-7 flex items-center justify-center">
@@ -2477,21 +2572,49 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
           <div className="panel p-4 flex flex-col gap-4 max-w-3xl mx-auto border-primary">
             <header className="border-b border-border pb-2.5">
               <h2 className="text-glow-green text-primary font-bold text-sm uppercase tracking-widest">
-                Protocol Session Summary
+                🎮 Game Session Complete!
               </h2>
               <span className="font-mono text-[9px] text-muted-foreground tracking-widest uppercase mt-1 block">
                 Session Finished · {participant}_trial{trialNo}_{exercise}
               </span>
             </header>
 
+            {/* BIG SCORE CARD */}
+            <div className="bg-gradient-to-br from-primary/20 to-primary/5 border-2 border-primary rounded-md p-6 text-center">
+              <div className="space-y-2">
+                <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
+                  Your Final Score
+                </h3>
+                <div className="font-mono space-y-1">
+                  <div className="text-3xl font-black text-primary text-glow-green">
+                    {gameRef.current.currentHurdle} / {numHurdles}
+                  </div>
+                  <div className="text-sm font-bold text-foreground">
+                    Hurdles Completed
+                  </div>
+                  <div className="text-4xl font-black text-glow-green text-primary mt-2">
+                    {Math.round((gameRef.current.currentHurdle / numHurdles) * 100)}%
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Quick stats cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
               <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
                 <span className="block text-2xl font-bold text-primary text-glow-green">
+                  {gameRef.current.currentHurdle}
+                </span>
+                <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
+                  Completed
+                </span>
+              </div>
+              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+                <span className="block text-2xl font-bold text-foreground/90">
                   {numHurdles}
                 </span>
                 <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
-                  Hurdles Cleared
+                  Total Hurdles
                 </span>
               </div>
               <div className="border border-border/60 bg-muted/55 rounded-sm p-3">

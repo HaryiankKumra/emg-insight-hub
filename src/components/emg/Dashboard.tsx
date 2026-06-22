@@ -1156,40 +1156,88 @@ function ExplorerView() {
 }
 
 function ReportView() {
-  const { active } = useEmgStore();
+  const { active, rawActive } = useEmgStore();
   const reportRef = useRef<HTMLDivElement>(null);
   if (!active) return <EmptyState msg="No dataset loaded" />;
   const ds = active;
 
+  // Use same quality calculation as OverviewView for consistency
+  const qualityMetrics = rawActive ? calculateQualityFromRaw(rawActive, CHANNELS, 2) : null;
+
   const metrics = CHANNELS.map((ch) => {
     const arr = channelArray(active, ch);
     const { freq, mag } = fftMagnitude(arr, active.sampleRate);
+    const q = qualityMetrics ? qualityMetrics[ch] : qualityScore(arr);
     return {
       ch,
       rms: rms(arr),
       mav: mav(arr),
       energy: energy(arr),
-      q: qualityScore(arr),
+      q,
       s: spectralMetrics(freq, mag),
+      freq,
+      mag,
     };
   });
 
   async function exportPdf() {
     const el = reportRef.current;
     if (!el) return;
-    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-      import("html2canvas"),
-      import("jspdf"),
-    ]);
-    const canvas = await html2canvas(el, { backgroundColor: "#0d121b", scale: 2 });
-    const img = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({
-      orientation: "portrait",
-      unit: "px",
-      format: [canvas.width, canvas.height],
-    });
-    pdf.addImage(img, "PNG", 0, 0, canvas.width, canvas.height);
-    pdf.save(`emg-report-${ds.id}.pdf`);
+    
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ]);
+      
+      // Wait a bit for charts to fully render
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Capture with better settings for charts
+      const canvas = await html2canvas(el, { 
+        backgroundColor: "#0d121b", 
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        timeout: 10000,
+        windowHeight: el.scrollHeight,
+        windowWidth: el.scrollWidth,
+      });
+      
+      const img = canvas.toDataURL("image/png");
+      const pdfWidth = 210; // A4 width in mm
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      const pdf = new jsPDF({
+        orientation: pdfHeight > pdfWidth ? "portrait" : "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+      
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 10;
+      
+      let heightLeft = pdfHeight;
+      let position = 0;
+      
+      // Add image in sections if needed
+      pdf.addImage(img, "PNG", margin, margin, pageWidth - 2 * margin, (canvas.height * (pageWidth - 2 * margin)) / canvas.width);
+      heightLeft -= pageHeight;
+      
+      while (heightLeft >= 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(img, "PNG", margin, position + margin, pageWidth - 2 * margin, (canvas.height * (pageWidth - 2 * margin)) / canvas.width);
+        heightLeft -= pageHeight;
+      }
+      
+      pdf.save(`emg-report-${ds.id}.pdf`);
+      alert("PDF report exported successfully!");
+    } catch (err: any) {
+      console.error("PDF export error:", err);
+      alert("Failed to export PDF. Please try again.");
+    }
   }
 
   function exportCsv() {
@@ -1290,6 +1338,48 @@ function ReportView() {
               ))}
             </tbody>
           </table>
+          
+          {/* Frequency Domain Analysis */}
+          <div className="mt-6 pt-4 border-t border-border/40">
+            <h3 className="text-sm font-bold text-primary mb-3">FREQUENCY DOMAIN ANALYSIS</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {metrics.map((m) => {
+                if (!m.freq || !m.mag) return null;
+                const cutoff = Math.min(m.freq.length, Math.floor(m.freq.length * 0.5));
+                const fftData = downsample(
+                  m.freq.slice(0, cutoff).map((f, i) => ({ f, mag: m.mag[i] })),
+                  512,
+                );
+                return (
+                  <div key={m.ch} className="border border-border/40 rounded-sm p-2 bg-background/30">
+                    <div className="text-[10px] font-bold text-primary mb-2">
+                      FFT · {m.ch.toUpperCase()} · {CHANNEL_LABELS[m.ch]}
+                    </div>
+                    <div style={{ height: 150 }}>
+                      <ResponsiveContainer>
+                        <AreaChart data={fftData} margin={{ top: 4, right: 8, bottom: 4, left: 4 }}>
+                          <defs>
+                            <linearGradient id={`fftGrad-${m.ch}`} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor={CHANNEL_COLORS[m.ch as Channel]?.line} stopOpacity={0.8} />
+                              <stop offset="95%" stopColor={CHANNEL_COLORS[m.ch as Channel]?.fill} stopOpacity={0.1} />
+                            </linearGradient>
+                          </defs>
+                          <XAxis dataKey="f" hide={true} />
+                          <YAxis hide={true} />
+                          <Area type="monotone" dataKey="mag" stroke={CHANNEL_COLORS[m.ch as Channel]?.line} fill={`url(#fftGrad-${m.ch})`} isAnimationActive={false} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="text-[9px] text-muted-foreground mt-1 grid grid-cols-3 gap-1">
+                      <div><span className="text-[8px]">MEAN</span><br />{m.s.meanFreq.toFixed(1)}Hz</div>
+                      <div><span className="text-[8px]">MEDIAN</span><br />{m.s.medianFreq.toFixed(1)}Hz</div>
+                      <div><span className="text-[8px]">DOMINANT</span><br />{m.s.dominantFreq.toFixed(1)}Hz</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </Panel>
     </div>
