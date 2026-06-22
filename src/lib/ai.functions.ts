@@ -30,6 +30,10 @@ export interface AnalyzeInput {
   sampleRate: number;
   durationSec: number;
   channels: ChannelSummary[];
+  predictedExerciseRules?: string;
+  predictedRepsRules?: string;
+  repConsensusDetails?: string;
+  highEfficiencyMuscles?: string[];
 }
 
 // Simple in-memory cache for analysis results (key-based on channels)
@@ -136,13 +140,22 @@ ${data.channels
   )
   .join("\n")}
 
+${data.predictedExerciseRules ? `Local DSP Predictions:
+- Predicted Exercise: ${data.predictedExerciseRules}
+- Smart Rep Consensus: ${data.predictedRepsRules}
+- Details: ${data.repConsensusDetails}
+- High-efficiency Muscles: ${data.highEfficiencyMuscles?.join(", ") || "None"}` : ""}
+
 Give a concise expert report in markdown with these sections:
 ### Signal Quality
 ### Muscle Activation
+### Exercise & Repetition Verification
+(Review the local DSP prediction of '${data.predictedExerciseRules || "Unknown"}' and rep count '${data.predictedRepsRules || "Unknown"}' against the channels' RMS ratios and frequencies. Confirm if this is correct and biomechanically physiological, providing explanation.)
 ### Frequency Content & Fatigue
 ### Issues / Recommendations
 
 Be specific: call out the strongest and weakest channels by name, flag suspected electrode lift / motion artifact / powerline noise (50/60 Hz) if frequencies/quality suggest it, note expected sEMG band is 20–450 Hz with dominant power 50–150 Hz, and suggest concrete fixes. Keep under ~250 words.`;
+
 
     if (!geminiLimiter.canMakeRequest()) {
       const retryAfter = geminiLimiter.getRetryAfterSeconds();

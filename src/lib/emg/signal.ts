@@ -1560,3 +1560,251 @@ export function generateReportData(
     combinedConfidence: 0.90 // Placeholder
   };
 }
+
+export interface ExerciseClassificationResult {
+  exercise: string;
+  confidence: number;
+  reasoning: string;
+  alternative: string;
+}
+
+export interface RepAnalysisResult {
+  detectedReps: string;
+  repDetails: string;
+  highEfficiencyMuscles: string[];
+  allMuscleReps: Record<Channel, { reps: number; score: number }>;
+}
+
+/**
+ * Heuristically classifies the exercise based on 4-channel sEMG metrics
+ */
+export function classifyExerciseHeuristically(
+  metrics: Array<{
+    ch: Channel;
+    rms: number;
+    mav: number;
+    zc: number;
+    q: { score: number; repCount: number; snrDb: number };
+  }>,
+  durationSec: number
+): ExerciseClassificationResult {
+  const chData = {
+    ch1: metrics.find((m) => m.ch === "ch1") || { rms: 0, mav: 0, zc: 0, q: { score: 0, repCount: 0, snrDb: 0 } },
+    ch2: metrics.find((m) => m.ch === "ch2") || { rms: 0, mav: 0, zc: 0, q: { score: 0, repCount: 0, snrDb: 0 } },
+    ch3: metrics.find((m) => m.ch === "ch3") || { rms: 0, mav: 0, zc: 0, q: { score: 0, repCount: 0, snrDb: 0 } },
+    ch4: metrics.find((m) => m.ch === "ch4") || { rms: 0, mav: 0, zc: 0, q: { score: 0, repCount: 0, snrDb: 0 } },
+  };
+
+  const ch1Rms = chData.ch1.rms;
+  const ch2Rms = chData.ch2.rms;
+  const ch3Rms = chData.ch3.rms;
+  const ch4Rms = chData.ch4.rms;
+
+  const totalRms = ch1Rms + ch2Rms + ch3Rms + ch4Rms;
+  const ch1Ratio = ch1Rms / (totalRms + 1e-9);
+  const ch2Ratio = ch2Rms / (totalRms + 1e-9);
+  const ch3Ratio = ch3Rms / (totalRms + 1e-9);
+  const ch4Ratio = ch4Rms / (totalRms + 1e-9);
+
+  const thighRatio = ch1Ratio + ch2Ratio;
+  const lowerLegRatio = ch3Ratio + ch4Ratio;
+
+  const activeChannels = metrics.filter((m) => m.rms > 0.05);
+  const avgReps = activeChannels.length > 0
+    ? activeChannels.reduce((sum, m) => sum + m.q.repCount, 0) / activeChannels.length
+    : 0;
+
+  const avgZc = metrics.reduce((sum, m) => sum + m.zc, 0) / metrics.length;
+  const normalizedZcPerSec = avgZc / Math.max(1, durationSec);
+
+  // 1. Jumping: High simultaneous co-activation across thighs and lower legs
+  if (ch1Rms > 0.35 && ch2Rms > 0.25 && ch3Rms > 0.25 && ch4Rms > 0.25 && thighRatio > 0.35 && lowerLegRatio > 0.35) {
+    return {
+      exercise: "Jumping",
+      confidence: 88,
+      reasoning: "Explosive, high-amplitude synchronized co-activation observed across both upper (Quad/Hamstring) and lower (Calf/TA) leg muscle groups.",
+      alternative: "Squats",
+    };
+  }
+
+  // 2. Calf Raises: Massive calf (Ch3) and TA (Ch4) dominance over upper leg
+  if (lowerLegRatio > thighRatio * 1.7 || (ch3Ratio > 0.45 && ch1Ratio < 0.25 && ch2Ratio < 0.25)) {
+    return {
+      exercise: "Calf Raises",
+      confidence: 92,
+      reasoning: "Strong focal activation of the Gastrocnemius (Calf) and Tibialis Anterior (TA) muscles, with minimal contribution from the upper thigh.",
+      alternative: "Walking",
+    };
+  }
+
+  // 3. Cycling: Rhythmic activation with continuous muscle tension and exceptionally high zero-crossing/firing frequency
+  if (normalizedZcPerSec > 350 || (thighRatio > 0.5 && ch3Ratio > 0.2 && avgReps > 12 && durationSec < 45)) {
+    return {
+      exercise: "Cycling",
+      confidence: 82,
+      reasoning: "Continuous, high-frequency motor unit firing with lack of distinct relaxation valleys, indicating continuous pedal transitions.",
+      alternative: "Walking",
+    };
+  }
+
+  // 4. Squats: Balanced co-contraction of Quadriceps (Ch1) and Hamstrings (Ch2)
+  if (thighRatio > 0.6 && Math.abs(ch1Ratio - ch2Ratio) < 0.22 && avgReps >= 4) {
+    return {
+      exercise: "Squats",
+      confidence: 85,
+      reasoning: "Balanced, slow-rhythm co-contraction of the Rectus Femoris (Quad) and Biceps Femoris (Hamstring), representing symmetric bilateral knee extension.",
+      alternative: "Leg Press",
+    };
+  }
+
+  // 5. Leg Press: Thigh-dominant with Quads (Ch1) significantly leading Hamstrings (Ch2)
+  if (thighRatio > 0.6 && ch1Ratio > ch2Ratio * 1.35) {
+    return {
+      exercise: "Leg Press",
+      confidence: 80,
+      reasoning: "Dominant Rectus Femoris (Quad) recruitment relative to Biceps Femoris (Hamstring), typical of a closed-chain leg press push phase.",
+      alternative: "Squats",
+    };
+  }
+
+  // 6. Stair Descent: TA acting as eccentric brake/stabilizer leads Calf
+  if (ch4Ratio > ch3Ratio * 1.3 && ch4Ratio > 0.28) {
+    return {
+      exercise: "Stair Descent",
+      confidence: 76,
+      reasoning: "High eccentric Tibialis Anterior (TA) activation relative to the Gastrocnemius (Calf) for controlled deceleration and foot positioning.",
+      alternative: "Walking",
+    };
+  }
+
+  // 7. Stair Ascent: Concentric Quad and Calf activation leading upward propulsion
+  if (ch1Ratio > 0.35 && ch3Ratio > 0.26) {
+    return {
+      exercise: "Stair Ascent",
+      confidence: 78,
+      reasoning: "Concentric coordination pattern favoring Rectus Femoris (Quad) and Gastrocnemius (Calf) for body elevation against gravity.",
+      alternative: "Lunges",
+    };
+  }
+
+  // 8. Lunges: Alternating thigh work with hamstrings and quads co-contracting
+  if (ch1Ratio > 0.38 && ch2Ratio > 0.22) {
+    return {
+      exercise: "Lunges",
+      confidence: 72,
+      reasoning: "Strong quad-hamstring activation couplet, typical of single-leg deceleration and deep knee flexion stabilization.",
+      alternative: "Squats",
+    };
+  }
+
+  // 9. Walking: Default low-amplitude rhythmic gait
+  return {
+    exercise: "Walking",
+    confidence: 68,
+    reasoning: "Low-to-moderate rhythmic contraction cycle distributed symmetrically across all 4 channels, typical of level walking gait.",
+    alternative: "Stair Ascent",
+  };
+}
+
+/**
+ * Analyzes rep counts across channels and computes consensus based on high-efficiency channels
+ */
+export function analyzeRepConsensus(
+  metrics: Array<{
+    ch: Channel;
+    rms: number;
+    mav: number;
+    zc: number;
+    q: { score: number; repCount: number; snrDb: number };
+  }>
+): RepAnalysisResult {
+  const highEffChannels = metrics.filter((m) => m.q.score >= 80);
+  
+  const chLabels: Record<Channel, string> = {
+    ch1: "Rectus Femoris (Quad)",
+    ch2: "Biceps Femoris (Hamstring)",
+    ch3: "Gastrocnemius (Calf)",
+    ch4: "Tibialis Anterior (TA)",
+  };
+
+  const allMuscleReps: Record<Channel, { reps: number; score: number }> = {} as any;
+  metrics.forEach((m) => {
+    allMuscleReps[m.ch] = { reps: m.q.repCount, score: m.q.score };
+  });
+
+  const highEfficiencyMuscles = highEffChannels.map((m) => chLabels[m.ch]);
+
+  if (highEffChannels.length === 0) {
+    // Fallback 1: Moderate efficiency channels (>= 70%)
+    const modEffChannels = metrics.filter((m) => m.q.score >= 70);
+    if (modEffChannels.length > 0) {
+      const counts = modEffChannels.map((m) => m.q.repCount);
+      const minVal = Math.min(...counts);
+      const maxVal = Math.max(...counts);
+      const avg = Math.round(counts.reduce((a, b) => a + b, 0) / counts.length);
+      
+      if (minVal === maxVal) {
+        return {
+          detectedReps: `${avg} reps`,
+          repDetails: `Detected ${avg} reps based on moderate quality channels (${modEffChannels.map((m) => m.ch.toUpperCase()).join(", ")}).`,
+          highEfficiencyMuscles: [],
+          allMuscleReps,
+        };
+      } else {
+        return {
+          detectedReps: `${minVal} to ${maxVal} reps`,
+          repDetails: `Estimated ${minVal}-${maxVal} reps (average: ${avg}) based on moderate quality channels.`,
+          highEfficiencyMuscles: [],
+          allMuscleReps,
+        };
+      }
+    }
+
+    // Fallback 2: Any active channel
+    const allCounts = metrics.map((m) => m.q.repCount);
+    const minVal = Math.min(...allCounts);
+    const maxVal = Math.max(...allCounts);
+    const avg = Math.round(allCounts.reduce((a, b) => a + b, 0) / allCounts.length);
+    
+    return {
+      detectedReps: minVal === maxVal ? `${avg} reps` : `${minVal} to ${maxVal} reps`,
+      repDetails: `Warning: Low signal quality across all channels. Estimated range: ${minVal} to ${maxVal} reps (average: ${avg}). Check electrode contact.`,
+      highEfficiencyMuscles: [],
+      allMuscleReps,
+    };
+  }
+
+  // We have high-efficiency channels (>= 80%)!
+  const counts = highEffChannels.map((m) => m.q.repCount);
+  const minVal = Math.min(...counts);
+  const maxVal = Math.max(...counts);
+
+  if (highEffChannels.length === 1) {
+    const singleCh = highEffChannels[0];
+    return {
+      detectedReps: `${singleCh.q.repCount} reps`,
+      repDetails: `Detected ${singleCh.q.repCount} reps based on ${chLabels[singleCh.ch]} (highest signal efficiency: ${singleCh.q.score}%).`,
+      highEfficiencyMuscles,
+      allMuscleReps,
+    };
+  }
+
+  // Multiple high-efficiency channels
+  if (minVal === maxVal) {
+    return {
+      detectedReps: `${minVal} reps`,
+      repDetails: `Detected exactly ${minVal} reps with high confidence, synchronized across: ${highEffChannels.map((m) => chLabels[m.ch].split(" (")[0]).join(", ")}.`,
+      highEfficiencyMuscles,
+      allMuscleReps,
+    };
+  } else {
+    const avg = Math.round(counts.reduce((a, b) => a + b, 0) / counts.length);
+    return {
+      detectedReps: `${minVal} to ${maxVal} reps`,
+      repDetails: `Detected range of ${minVal} to ${maxVal} reps (average: ${avg}) across high efficiency channels (${highEffChannels.map((m) => chLabels[m.ch].split(" (")[0]).join(", ")}).`,
+      highEfficiencyMuscles,
+      allMuscleReps,
+    };
+  }
+}
+

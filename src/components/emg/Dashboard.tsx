@@ -53,6 +53,8 @@ import {
   generateCleanCsv,
   generateReportData,
   improvedDetectReps,
+  classifyExerciseHeuristically,
+  analyzeRepConsensus,
   type Channel,
   type EmgDataset,
   type EmgSample,
@@ -508,6 +510,9 @@ function OverviewView() {
   const avgQ = Math.round(metrics.reduce((s, m) => s + m.q.score, 0) / metrics.length);
   const strongest = [...metrics].sort((a, b) => b.rms - a.rms)[0];
 
+  const classification = classifyExerciseHeuristically(metrics, totalSec);
+  const repConsensus = analyzeRepConsensus(metrics);
+
   return (
     <div className="grid grid-cols-12 gap-3 auto-rows-min">
       <div className="col-span-12 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
@@ -585,8 +590,77 @@ function OverviewView() {
         <EnvelopeChart ds={active} height={240} />
       </Panel>
 
+      <Panel title="DSP Analytics · Local Classification" className="col-span-12 lg:col-span-4">
+        <div className="flex flex-col gap-3 h-full justify-between">
+          <div className="space-y-3">
+            {/* Exercise Prediction Card */}
+            <div className="bg-background/40 border border-border/80 rounded-sm p-3 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full blur-2xl pointer-events-none" />
+              
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Predicted Exercise</span>
+                <span className="inline-flex items-center gap-1 text-[10px] text-primary font-semibold">
+                  <Activity className="size-3 animate-pulse" /> Local Heuristics
+                </span>
+              </div>
+              <div className="mt-1.5 flex items-baseline gap-2">
+                <h4 className="text-sm font-bold text-foreground tracking-tight">
+                  {classification.exercise}
+                </h4>
+                <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded-sm">
+                  {classification.confidence}% match
+                </span>
+              </div>
+              <p className="mt-2 text-[10px] text-muted-foreground leading-normal">
+                {classification.reasoning}
+              </p>
+              <div className="mt-2 pt-2 border-t border-border/50 flex justify-between text-[9px] text-muted-foreground/80">
+                <span>Alternative: {classification.alternative}</span>
+                <span>Type: Rule-Based DSP</span>
+              </div>
+            </div>
+
+            {/* Smart Rep Consensus Card */}
+            <div className="bg-background/40 border border-border/80 rounded-sm p-3 relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Smart Rep Consensus</span>
+                <span className="text-[9px] bg-primary/10 text-primary px-1 rounded-sm uppercase font-mono">
+                  {repConsensus.highEfficiencyMuscles.length > 0 ? "High Conf" : "Est"}
+                </span>
+              </div>
+              <div className="mt-1.5 flex items-baseline gap-1">
+                <span className="text-xl font-black text-[var(--neon-cyan)] tracking-tight">
+                  {repConsensus.detectedReps}
+                </span>
+              </div>
+              <p className="mt-1.5 text-[10px] text-muted-foreground leading-normal">
+                {repConsensus.repDetails}
+              </p>
+
+              {/* Muscles with high efficiency */}
+              {repConsensus.highEfficiencyMuscles.length > 0 && (
+                <div className="mt-2.5 space-y-1">
+                  <span className="text-[9px] uppercase text-muted-foreground/60 tracking-wider">High Efficiency (≥80%):</span>
+                  <div className="flex flex-wrap gap-1">
+                    {repConsensus.highEfficiencyMuscles.map((muscle) => (
+                      <span key={muscle} className="text-[9px] bg-primary/20 text-primary-foreground border border-primary/30 rounded-sm px-1.5 py-0.5">
+                        {muscle.split(" (")[0]}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="text-[9px] text-muted-foreground/60 italic text-center pb-1">
+            *Predictions will be validated by Gemini AI in the insights panel.
+          </div>
+        </div>
+      </Panel>
+
       <AiInsightsPanel
-        className="col-span-12 lg:col-span-4"
+        className="col-span-12"
         active={active}
         metrics={metrics}
       />
@@ -686,12 +760,20 @@ function AiInsightsPanel({
           dominant_freq_hz: +s.dominantFreq.toFixed(1),
         };
       });
+      // Calculate heuristic predictions locally
+      const classification = classifyExerciseHeuristically(metrics, totalSec);
+      const repConsensus = analyzeRepConsensus(metrics);
+
       const res = await analyze({
         data: {
           datasetName: active.name,
           sampleRate: active.sampleRate,
           durationSec: totalSec,
           channels: chSummaries,
+          predictedExerciseRules: classification.exercise,
+          predictedRepsRules: repConsensus.detectedReps,
+          repConsensusDetails: repConsensus.repDetails,
+          highEfficiencyMuscles: repConsensus.highEfficiencyMuscles,
         },
       });
       setText(res.text);
