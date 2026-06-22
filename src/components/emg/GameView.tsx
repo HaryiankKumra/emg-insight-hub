@@ -343,15 +343,6 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
   // Sync phase changes back to UI React state (for overlay conditions)
   const changePhase = (newPhase: typeof phase) => {
     gameRef.current.phase = newPhase;
-    
-    // When game ends, capture the EMG dataset before stopping recording
-    if (newPhase === "results" && gameRef.current.phase !== "results") {
-      const recordedDataset = serialManager.stopRecording(true); // Get filtered copy
-      if (recordedDataset && recordedDataset.samples.length > 0) {
-        setLastGameEMGDataset(recordedDataset);
-      }
-    }
-    
     setPhase(newPhase);
   };
 
@@ -768,7 +759,8 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       // Stop serialManager recording automatically if recording was active
       if (serialManager.getIsRecording()) {
         const dataset = serialManager.stopRecording(true);
-        if (dataset) {
+        if (dataset && dataset.samples.length > 0) {
+          setLastGameEMGDataset(dataset); // Save for export
           addDataset(dataset);
         }
       }
@@ -1389,9 +1381,19 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
       ctx.clearRect(0, 0, w, h);
 
-      // Draw dotted threshold line
+      // Draw centerline (baseline) for reference
+      const centerY = h / 2;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.moveTo(0, centerY);
+      ctx.lineTo(w, centerY);
+      ctx.stroke();
+      
+      // Draw dotted threshold line (centered)
       const tPct = Math.min(gameRef.current.threshold / 300, 1.0);
-      const ty = h - tPct * h * 0.85 - 4;
+      const ty = centerY - (tPct * (h * 0.4));
       ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]);
@@ -1412,6 +1414,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         4: "rgba(255, 53, 122, 0.45)", // Magenta
       };
 
+      // Helper: Convert value to Y pixel, centered vertically
+      const getYPixel = (value: number) => {
+        // Center the signal around middle of canvas
+        // Range: 0-300 mV becomes centered around h/2
+        const centerY = h / 2;
+        const scaledValue = (value / 300) * (h * 0.4); // 40% of canvas height for signal swing
+        return centerY - scaledValue;
+      };
+
       // Draw selected sub-channel lines
       const drawChannels = isAuto ? [1, 2, 3, 4] : activeChs;
       drawChannels.forEach((ch) => {
@@ -1423,7 +1434,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         ctx.beginPath();
         for (let i = 0; i < pts.length; i++) {
           const px = i * step;
-          const py = h - (Math.min(pts[i], 300) / 300) * h * 0.85 - 4;
+          const py = getYPixel(Math.max(0, Math.min(pts[i], 300)));
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         }
@@ -1445,7 +1456,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         ctx.beginPath();
         for (let i = 0; i < combPts.length; i++) {
           const px = i * step;
-          const py = h - (Math.min(combPts[i], 300) / 300) * h * 0.85 - 4;
+          const py = getYPixel(Math.max(0, Math.min(combPts[i], 300)));
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         }
@@ -1453,8 +1464,8 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         ctx.shadowBlur = 0;
 
         // Gradient fill underneath
-        ctx.lineTo((combPts.length - 1) * step, h);
-        ctx.lineTo(0, h);
+        ctx.lineTo((combPts.length - 1) * step, h / 2);
+        ctx.lineTo(0, h / 2);
         ctx.closePath();
 
         const fillGrad = ctx.createLinearGradient(0, 0, 0, h);

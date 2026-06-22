@@ -176,28 +176,11 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
 
         const color = CH_COLORS[chId as 1 | 2 | 3 | 4];
 
-        // Determine Y Range - centered around midpoint
-        let yMin = 0;
-        let yMax = 3300;
-
-        if (autoScale[chId]) {
-          const max = Math.max(...data);
-          const min = Math.min(...data);
-          const range = max - min || 10;
-          const pad = range * 0.15;
-          const mid = (max + min) / 2;
-          const halfRange = (range / 2) + pad;
-          yMin = Math.max(0, mid - halfRange);
-          yMax = Math.min(3300, mid + halfRange);
-        }
-
-        // Calculate nice axis steps
-        const yRange = yMax - yMin;
-        let yStep = 100; // Default step
-        if (yRange > 2000) yStep = 500;
-        else if (yRange > 1000) yStep = 200;
-        else if (yRange > 500) yStep = 100;
-        else yStep = 50;
+        // Fixed 0-300mV scale (emg-monitor approach - prevents clipping)
+        const yMin = 0;
+        const yMax = 300;
+        const yRange = 300;
+        const yStep = 50;
 
         // Reserve space for axes
         const leftMargin = 50;
@@ -253,7 +236,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
           ctx.fillText(`${timeMs.toFixed(0)}ms`, px, plotH + 20);
         }
 
-        // Draw signal
+        // Draw signal with fixed 0-300mV scale
         const stepX = plotW / 500;
 
         ctx.strokeStyle = color.line;
@@ -262,7 +245,9 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
 
         for (let i = 0; i < data.length; i++) {
           const px = leftMargin + (i * stepX);
-          const py = plotH - ((data[i] - yMin) / (yMax - yMin || 1)) * plotH;
+          // Cap at 300mV to prevent clipping (like emg-monitor)
+          const cappedValue = Math.min(data[i], yMax);
+          const py = plotH - ((cappedValue - yMin) / (yMax - yMin || 1)) * plotH;
 
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
