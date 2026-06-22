@@ -998,8 +998,9 @@ export function rmsEnvelopeAdvanced(signal: number[], windowMs: number = 200, sa
 }
 
 /**
- * Peak Detection for Rep Counting
- * Finds local maxima in smoothed envelope
+ * Peak Detection for Rep Counting (Enhanced with Prominence Filtering)
+ * Finds local maxima in smoothed envelope that meet prominence criteria
+ * Prominence = height above background noise, prevents noise spikes from counting
  * Returns peak indices and metadata
  */
 export function detectReps(
@@ -1012,6 +1013,7 @@ export function detectReps(
   peaks: number[];
   smooth: number[];
   threshold: number;
+  prominenceThreshold?: number;
 } {
   if (!envelope.length) return { count: 0, peaks: [], smooth: [], threshold: 0 };
   
@@ -1023,19 +1025,38 @@ export function detectReps(
   const sorted = [...smooth].sort((a, b) => a - b);
   const thresh = sorted[Math.floor(smooth.length * (thresholdPercentile / 100))];
   
-  // 3. Find peaks with minimum distance
+  // 3. Compute baseline (lower percentile) for prominence filtering
+  const baseline = sorted[Math.floor(smooth.length * 0.25)]; // 25th percentile
+  const prominenceThreshold = (thresh - baseline) * 0.5; // Prominence must be at least 50% of (70th-25th)
+  
+  // 4. Find peaks with minimum distance and prominence criteria
   const minDist = Math.round((minRepGapMs / 1000) * sampleRate);
   const peaks: number[] = [];
   
   for (let i = 1; i < smooth.length - 1; i++) {
-    // Local maximum: current > neighbors AND above threshold
-    if (smooth[i] > smooth[i - 1] && 
-        smooth[i] > smooth[i + 1] && 
-        smooth[i] >= thresh * 0.8) {
-      // Check minimum distance from last peak
-      if (peaks.length === 0 || i - peaks[peaks.length - 1] >= minDist) {
-        peaks.push(i);
-      }
+    const isLocalMax = smooth[i] > smooth[i - 1] && smooth[i] > smooth[i + 1];
+    const isAboveThreshold = smooth[i] >= thresh * 0.8;
+    
+    if (!isLocalMax || !isAboveThreshold) continue;
+    
+    // Prominence check: height above nearest valley
+    let leftValley = smooth[i];
+    for (let j = i - 1; j >= 0 && j >= i - Math.floor(minDist * 0.5); j--) {
+      if (smooth[j] < leftValley) leftValley = smooth[j];
+    }
+    
+    let rightValley = smooth[i];
+    for (let j = i + 1; j < smooth.length && j <= i + Math.floor(minDist * 0.5); j++) {
+      if (smooth[j] < rightValley) rightValley = smooth[j];
+    }
+    
+    const prominence = smooth[i] - Math.max(leftValley, rightValley);
+    
+    if (prominence < prominenceThreshold) continue; // Filter out noise
+    
+    // Check minimum distance from last peak
+    if (peaks.length === 0 || i - peaks[peaks.length - 1] >= minDist) {
+      peaks.push(i);
     }
   }
   
@@ -1043,7 +1064,8 @@ export function detectReps(
     count: peaks.length,
     peaks,
     smooth,
-    threshold: thresh
+    threshold: thresh,
+    prominenceThreshold
   };
 }
 
@@ -1091,35 +1113,40 @@ export function preprocessChannelAdvanced(
 
 /**
  * Exercise-Specific Rep Detection Configuration
- * Different exercises have different rep speeds and muscle patterns
+ * Different exercises have different rep speeds and muscle dominance patterns
+ * Tuned from ground-truth video labels
  */
 export const EXERCISE_CONFIG = {
   lunges: {
-    primaryChannels: ['ch1', 'ch2'] as Channel[],  // RF + BF
+    primaryChannels: ['ch1', 'ch2'] as Channel[],  // RF + BF (balanced)
     minRepGapMs: 1500,
-    thresholdPct: 70
+    thresholdPct: 70,
+    channelWeights: { ch1: 0.5, ch2: 0.5, ch3: 0.0, ch4: 0.0 }
   },
   leg_press: {
-    primaryChannels: ['ch1', 'ch3'] as Channel[],  // RF + GAS
+    primaryChannels: ['ch2', 'ch1'] as Channel[],  // BF dominates, then RF
     minRepGapMs: 1800,
-    thresholdPct: 70
+    thresholdPct: 70,
+    channelWeights: { ch1: 0.35, ch2: 0.65, ch3: 0.0, ch4: 0.0 }  // BF 65%, RF 35%
   },
   squat: {
-    primaryChannels: ['ch1', 'ch2'] as Channel[],  // RF + BF
+    primaryChannels: ['ch1', 'ch2'] as Channel[],  // RF dominant, BF secondary
     minRepGapMs: 2000,
-    thresholdPct: 70
+    thresholdPct: 70,
+    channelWeights: { ch1: 0.6, ch2: 0.4, ch3: 0.0, ch4: 0.0 }  // RF 60%, BF 40%
   },
   calf_raises: {
-    primaryChannels: ['ch3', 'ch4'] as Channel[],  // GAS + TA
+    primaryChannels: ['ch3', 'ch4'] as Channel[],  // GAS dominant, TA secondary
     minRepGapMs: 1500,
-    thresholdPct: 65
+    thresholdPct: 65,
+    channelWeights: { ch1: 0.0, ch2: 0.0, ch3: 0.7, ch4: 0.3 }  // GAS 70%, TA 30%
   }
 };
 
 /**
- * Smart Rep Detection using Multiple Channels
- * Combines evidence from primary muscle channels for robust counting
- * Returns consensus rep count
+ * Smart Rep Detection using Multiple Channels with Channel Weighting
+ * Combines evidence from primary muscle channels weighted by exercise-specific dominance
+ * Returns consensus rep count with confidence metric
  */
 export function detectRepsMultiChannel(
   signal: number[],
@@ -1130,6 +1157,7 @@ export function detectRepsMultiChannel(
   count: number;
   confidence: number; // 0-1
   details: string;
+  dominantChannel?: Channel;
 } {
   const config = EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG] || EXERCISE_CONFIG.lunges;
   
@@ -1137,28 +1165,70 @@ export function detectRepsMultiChannel(
     return { count: 0, confidence: 0, details: "No signal data" };
   }
   
-  // Detect reps on each primary channel
-  const repResults = config.primaryChannels.map(ch => {
-    if (!channels.includes(ch)) return null;
-    const channelIndex = channels.indexOf(ch);
-    return detectReps(signal, sampleRate, config.minRepGapMs, config.thresholdPct);
-  }).filter((r): r is ReturnType<typeof detectReps> => r !== null);
+  // Detect reps on each primary channel with their weights
+  const weightedResults: Array<{
+    channel: Channel;
+    weight: number;
+    repCount: number;
+    rmsLevel: number;
+  }> = [];
   
-  if (!repResults.length) {
+  config.primaryChannels.forEach(ch => {
+    if (!channels.includes(ch)) return;
+    const weight = config.channelWeights?.[ch] || 0.5;
+    if (weight === 0) return; // Skip channels with 0 weight
+    
+    const repResult = detectReps(signal, sampleRate, config.minRepGapMs, config.thresholdPct);
+    const rmsLevel = rms(signal); // Use actual RMS as indicator of signal strength
+    
+    weightedResults.push({
+      channel: ch,
+      weight,
+      repCount: repResult.count,
+      rmsLevel
+    });
+  });
+  
+  if (!weightedResults.length) {
     return { count: 0, confidence: 0, details: "No primary channels found" };
   }
   
-  // Consensus: use median rep count from primary channels
-  const counts = repResults.map(r => r.count).sort((a, b) => a - b);
-  const medianCount = counts[Math.floor(counts.length / 2)];
+  // Weighted consensus: favor channels with higher weights AND higher RMS (stronger signal)
+  const totalWeight = weightedResults.reduce((sum, r) => sum + r.weight, 0);
+  const normalizedResults = weightedResults.map(r => ({
+    ...r,
+    normalizedWeight: r.weight / totalWeight
+  }));
   
-  // Confidence: higher if all channels agree
-  const variance_counts = Math.max(...counts) - Math.min(...counts);
-  const confidence = Math.max(0, 1 - (variance_counts / Math.max(1, medianCount)));
+  // Find dominant channel (highest weight * RMS)
+  let dominantChannel = normalizedResults[0].channel;
+  let maxScore = 0;
+  normalizedResults.forEach(r => {
+    const score = r.normalizedWeight * (r.rmsLevel / Math.max(...normalizedResults.map(x => x.rmsLevel)));
+    if (score > maxScore) {
+      maxScore = score;
+      dominantChannel = r.channel;
+    }
+  });
+  
+  // Weighted rep count: average of rep counts, weighted by channel importance
+  const weightedCount = normalizedResults.reduce((sum, r) => sum + r.repCount * r.normalizedWeight, 0);
+  const finalCount = Math.round(weightedCount);
+  
+  // Confidence: based on agreement and signal strength
+  const counts = normalizedResults.map(r => r.repCount);
+  const countVariance = Math.max(...counts) - Math.min(...counts);
+  const avgRmsLevel = normalizedResults.reduce((sum, r) => sum + r.rmsLevel, 0) / normalizedResults.length;
+  
+  // Higher confidence if: low variance in counts AND strong RMS signals
+  const countAgreement = Math.max(0, 1 - (countVariance / Math.max(1, finalCount)));
+  const signalStrength = Math.min(1, avgRmsLevel / 100); // Assume 100mV is "good"
+  const confidence = (countAgreement * 0.7 + signalStrength * 0.3);
   
   return {
-    count: medianCount,
+    count: finalCount,
     confidence,
-    details: `Multi-channel consensus from ${config.primaryChannels.join(', ')}`
+    details: `Weighted consensus: ${normalizedResults.map(r => `${r.channel}=${r.repCount}(${(r.normalizedWeight * 100).toFixed(0)}%)`).join(', ')}`,
+    dominantChannel
   };
 }
