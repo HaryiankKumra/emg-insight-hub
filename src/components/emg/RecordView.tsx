@@ -13,7 +13,7 @@ const CH_COLORS = {
 };
 
 export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => void }) {
-  const { addDataset, dspEnabled, setDspEnabled } = useEmgStore();
+  const { addDataset, dspEnabled, setDspEnabled, theme } = useEmgStore();
   const [connected, setConnected] = useState(false);
   const [stats, setStats] = useState(serialManager.stats);
   const [isRecording, setIsRecording] = useState(false);
@@ -204,9 +204,10 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
 
         // Draw horizontal grid lines and Y-axis labels
         ctx.font = "11px monospace";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        const isDark = theme === "dark";
+        ctx.fillStyle = isDark ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0.6)";
         ctx.textAlign = "right";
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+        ctx.strokeStyle = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.1)";
         ctx.lineWidth = 1;
 
         for (let yVal = Math.ceil(yMin / yStep) * yStep; yVal <= yMax; yVal += yStep) {
@@ -238,7 +239,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
 
         // Draw time axis labels at bottom
         ctx.font = "10px monospace";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.fillStyle = isDark ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0.6)";
         ctx.textAlign = "center";
         const timeStep = Math.ceil(snap.samples.length / 5); // Show ~5 time labels
         const sampleRate = snap.sampleRate || 1000;

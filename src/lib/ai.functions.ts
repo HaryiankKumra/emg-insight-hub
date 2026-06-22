@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   CHANNELS,
   CHANNEL_LABELS,
@@ -164,18 +164,21 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
       );
     }
 
-    const ai = new GoogleGenAI({ apiKey: geminiKey });
+    const ai = new GoogleGenerativeAI({ apiKey: geminiKey });
     try {
       geminiLimiter.recordRequest();
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: "You are a precise biomedical signal-processing assistant.",
+      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const result = await model.generateContent({
+        contents: [{
+          role: "user",
+          parts: [{ text: prompt }],
+        }],
+        generationConfig: {
           maxOutputTokens: 800,
         },
+        systemInstruction: "You are a precise biomedical signal-processing assistant.",
       });
-      const text = response.text ?? "(no response)";
+      const text = result.response.text() ?? "(no response)";
       analysisCache.set(cacheKey, { text, timestamp: Date.now() });
       return { text, cached: false };
     } catch (err) {
