@@ -1933,35 +1933,109 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     URL.revokeObjectURL(url);
   };
 
-  const handleExportEMGCSV = (filtered: boolean) => {
+  const handleExportEMGCSV = () => {
     // Generate CSV from live recorded samples stored in serialManager
     const rawDataset = serialManager.stopRecording(false);
     if (!rawDataset || !rawDataset.samples.length) {
       alert("No physical EMG serial samples were recorded in this trial.");
       return;
     }
+    
+    // Build metadata header lines (matching emg-monitor format)
+    const now = new Date();
+    const sessionTimestamp = now.toISOString();
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    
+    const metaLine1 = `# participant=${participant} | sex=${sex} | age=${age} | weight_kg=${weightKg} | height_cm=${heightCm}`;
+    const metaLine2 = `# exercise=${exercise} | trial_no=${trialNo} | label=${exercise} | session=${sessionTimestamp} | tz=${tz}`;
+    
+    // Use muscle names instead of channel labels
+    const muscleNames = {
+      ch1: "Rectus_Femoris_Quad",
+      ch2: "Biceps_Femoris_Hamstring",
+      ch3: "Gastrocnemius_Lateralis_Calf",
+      ch4: "Tibialis_Anterior_TA",
+    };
+    
+    // Get recording start time (assume first sample is at current time minus duration)
+    const recordStartMs = Date.now() - (rawDataset.samples.length / (rawDataset.sampleRate || 1000)) * 1000;
+    
+    // Helper: Generate datetime for a sample index
+    const getDatetimeLocal = (idx: number) => {
+      const sampleTimeMs = recordStartMs + (idx / (rawDataset.sampleRate || 1000)) * 1000;
+      const sampleDate = new Date(sampleTimeMs);
+      return sampleDate.toLocaleString('sv-SE', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 3
+      }).replace(' ', 'T');
+    };
 
-    const ds = filtered ? preprocessDataset(rawDataset) : rawDataset;
-    const header = "t,ch1,ch2,ch3,ch4\n";
-    const rows = ds.samples
-      .map((s) =>
-        [
-          s.t.toFixed(4),
-          s.ch1.toFixed(3),
-          s.ch2.toFixed(3),
-          s.ch3.toFixed(3),
-          s.ch4.toFixed(3),
-        ].join(","),
-      )
-      .join("\n");
+    const downloadWideCSV = (filtered: boolean) => {
+      const ds = filtered ? preprocessDataset(rawDataset) : rawDataset;
+      if (!ds) return;
+      
+      const suffix = filtered ? "filtered_mV" : "raw_mV";
+      const header = `datetime_local,${muscleNames.ch1}_${suffix},${muscleNames.ch2}_${suffix},${muscleNames.ch3}_${suffix},${muscleNames.ch4}_${suffix}`;
+      
+      const rows = ds.samples
+        .map((s, idx) => {
+          const datetimeLocal = getDatetimeLocal(idx);
+          return `${datetimeLocal},${s.ch1.toFixed(2)},${s.ch2.toFixed(2)},${s.ch3.toFixed(2)},${s.ch4.toFixed(2)}`;
+        })
+        .join("\n");
 
-    const blob = new Blob([header + rows], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${participant}_trial${trialNo}_${exercise}_emg_${filtered ? "filtered" : "raw"}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+      const blob = new Blob([metaLine1 + "\n" + metaLine2 + "\n" + header + "\n" + rows], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${participant}_trial${trialNo}_${exercise}_emg_${filtered ? "filtered" : "raw"}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    const downloadLongCSV = () => {
+      const ds = preprocessDataset(rawDataset);
+      if (!ds) return;
+      
+      const header = `datetime_local,channel,muscle,value_mV`;
+      
+      const rows: string[] = [];
+      ds.samples.forEach((s, idx) => {
+        const datetimeLocal = getDatetimeLocal(idx);
+        const channels = [
+          { ch: 1, muscle: muscleNames.ch1, val: s.ch1 },
+          { ch: 2, muscle: muscleNames.ch2, val: s.ch2 },
+          { ch: 3, muscle: muscleNames.ch3, val: s.ch3 },
+          { ch: 4, muscle: muscleNames.ch4, val: s.ch4 },
+        ];
+        
+        channels.forEach(({ ch, muscle, val }) => {
+          rows.push(`${datetimeLocal},${ch},${muscle},${val.toFixed(2)}`);
+        });
+      });
+      
+      const blob = new Blob([metaLine1 + "\n" + metaLine2 + "\n" + header + "\n" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${participant}_trial${trialNo}_${exercise}_emg_long_filtered.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    // Download all 3 file formats
+    downloadWideCSV(false);  // Raw wide format
+    downloadWideCSV(true);   // Filtered wide format
+    downloadLongCSV();       // Long format (stacked channels)
   };
 
   // Alignment Calculation
@@ -2938,16 +3012,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
               {connected && (
                 <>
                   <Button
-                    onClick={() => handleExportEMGCSV(true)}
+                    onClick={() => handleExportEMGCSV()}
                     className="flex-1 uppercase font-bold tracking-wider text-[10px] h-10 border border-border/80 hover:bg-muted/40 transition-all rounded-md cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
                   >
-                    <Download className="size-3 mr-1" /> EMG Filtered
-                  </Button>
-                  <Button
-                    onClick={() => handleExportEMGCSV(false)}
-                    className="flex-1 uppercase font-bold tracking-wider text-[10px] h-10 border border-border/80 hover:bg-muted/40 transition-all rounded-md cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
-                  >
-                    <Download className="size-3 mr-1" /> EMG Raw
+                    <Download className="size-3 mr-1" /> EMG Data (3 Files)
                   </Button>
                   <Button
                     onClick={() => setShowAlignModal(true)}
