@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import type { EmgDataset, EmgSample } from "./signal";
+import { interpolateChannel, mean } from "./signal";
 
 // Parses EMG CSVs of the form:
 //   # participant=... | ...
@@ -9,6 +10,8 @@ import type { EmgDataset, EmgSample } from "./signal";
 // Also accepts generic time/ch1..ch4 layouts.
 export async function parseCsvFile(file: File, fallbackSampleRate = 1000): Promise<EmgDataset> {
   const text = await file.text();
+  const isFiltered = /filter/i.test(file.name) || /filter/i.test(text.substring(0, 1000));
+
   return new Promise((resolve, reject) => {
     Papa.parse<Record<string, unknown>>(text, {
       header: true,
@@ -63,21 +66,28 @@ export async function parseCsvFile(file: File, fallbackSampleRate = 1000): Promi
             return Number.isFinite(ms) ? ms / 1000 : i / fallbackSampleRate;
           };
 
-          // First pass: compute per-channel mean over non-empty cells (used for baseline removal and gap-fill).
-          const sums = [0, 0, 0, 0];
-          const counts = [0, 0, 0, 0];
-          for (const r of rows) {
+          // Extract raw numeric values (preserving nulls) for all rows
+          const getRawVal = (r: Record<string, unknown>, colKey: string | undefined): number | null => {
+            if (!colKey) return null;
+            const raw = r[colKey];
+            if (raw === "" || raw == null) return null;
+            const s = String(raw).trim();
+            if (s === "") return null;
+            const n = Number(s);
+            return Number.isFinite(n) ? n : null;
+          };
+
+          const rawChannels: (number | null)[][] = [[], [], [], []];
+          for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
             for (let c = 0; c < 4; c++) {
-              const v = r[cKeys[c]!];
-              if (v === "" || v == null) continue;
-              const n = Number(v);
-              if (Number.isFinite(n)) {
-                sums[c] += n;
-                counts[c] += 1;
-              }
+              rawChannels[c].push(getRawVal(r, cKeys[c]));
             }
           }
-          const means = sums.map((s, i) => (counts[i] ? s / counts[i] : 0));
+
+          // Interpolate missing channel values
+          const interpolatedChannels = rawChannels.map((ch) => interpolateChannel(ch));
+          const channelMeans = interpolatedChannels.map((ch) => mean(ch));
 
           const samples: EmgSample[] = [];
           let t0: number | null = null;
@@ -86,19 +96,12 @@ export async function parseCsvFile(file: File, fallbackSampleRate = 1000): Promi
             const tAbs = parseT(r[tKey ?? ""], i);
             if (t0 === null) t0 = tAbs;
             const t = tAbs - t0;
-            const getCh = (c: number): number => {
-              const raw = r[cKeys[c]!];
-              if (raw === "" || raw == null) return 0; // centered baseline
-              const n = Number(raw);
-              if (!Number.isFinite(n)) return 0;
-              return n - means[c];
-            };
             samples.push({
               t: Number.isFinite(t) ? t : i / fallbackSampleRate,
-              ch1: getCh(0),
-              ch2: getCh(1),
-              ch3: getCh(2),
-              ch4: getCh(3),
+              ch1: interpolatedChannels[0][i] - channelMeans[0],
+              ch2: interpolatedChannels[1][i] - channelMeans[1],
+              ch3: interpolatedChannels[2][i] - channelMeans[2],
+              ch4: interpolatedChannels[3][i] - channelMeans[3],
             });
           }
 
@@ -124,6 +127,7 @@ export async function parseCsvFile(file: File, fallbackSampleRate = 1000): Promi
             samples,
             uploadedAt: Date.now(),
             source: "csv",
+            isFiltered,
           });
         } catch (e) {
           reject(e);
@@ -133,3 +137,4 @@ export async function parseCsvFile(file: File, fallbackSampleRate = 1000): Promi
     });
   });
 }
+

@@ -30,6 +30,7 @@ export interface EmgDataset {
   samples: EmgSample[];
   uploadedAt: number;
   source: "mock" | "csv";
+  isFiltered?: boolean;
 }
 
 export function mean(a: number[]): number {
@@ -864,63 +865,78 @@ export function createNotch(f0: number, fs: number, q = 10): BiquadFilter {
 }
 
 // Processes a complete dataset through the filter pipeline
-// Processes a complete dataset through the filter pipeline
 // Options: skipFirstSecs = skip first N seconds (default 2 for filter warm-up + startup transients)
 export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2): EmgDataset {
   const fs = ds.sampleRate;
   const skipSamples = Math.floor(skipFirstSecs * fs);
 
-  // Create unique filter pipelines for each channel
-  const createPipeline = () => {
-    const hp = createHighPass(20, fs);
-    const lp = createLowPass(Math.min(450, fs * 0.45), fs);
-    const notch50 = createNotch(50, fs, 8);
-    const notch60 = createNotch(60, fs, 8);
-    return { hp, lp, notch50, notch60 };
+  // Extract signals for each channel
+  const chNames: Channel[] = ["ch1", "ch2", "ch3", "ch4"];
+  const rawSignals: Record<Channel, number[]> = {
+    ch1: ds.samples.map(s => s.ch1),
+    ch2: ds.samples.map(s => s.ch2),
+    ch3: ds.samples.map(s => s.ch3),
+    ch4: ds.samples.map(s => s.ch4),
   };
 
-  const pipelines = {
-    ch1: createPipeline(),
-    ch2: createPipeline(),
-    ch3: createPipeline(),
-    ch4: createPipeline(),
-  };
+  const processedSignals: Record<Channel, number[]> = {} as any;
 
-  // Warm up filters to eliminate transient spikes at the start
-  const warmupSamples = Math.max(1, Math.floor(fs * 0.5)); // 500ms warm-up
-  
-  const processCh = (val: number, pipe: ReturnType<typeof createPipeline>) => {
-    let v = val;
-    v = pipe.hp.process(v);
-    v = pipe.notch50.process(v);
-    v = pipe.notch60.process(v);
-    v = pipe.lp.process(v);
-    return v;
-  };
+  // Process each channel
+  for (const ch of chNames) {
+    let sig = rawSignals[ch];
 
-  // Warm-up phase: process first N samples but discard them
-  for (let i = 0; i < warmupSamples && i < ds.samples.length; i++) {
-    const s = ds.samples[i];
-    processCh(s.ch1, pipelines.ch1);
-    processCh(s.ch2, pipelines.ch2);
-    processCh(s.ch3, pipelines.ch3);
-    processCh(s.ch4, pipelines.ch4);
+    // 1. DC Removal
+    sig = dcRemoval(sig);
+
+    // 2. Spike clipping at ±3σ
+    sig = spikeClipping(sig);
+
+    // 3. Filtering (skip if already filtered)
+    if (ds.isFiltered) {
+      processedSignals[ch] = sig;
+    } else {
+      // Create filter pipeline
+      const hp = createHighPass(20, fs);
+      const lp = createLowPass(Math.min(450, fs * 0.45), fs);
+      const notch50 = createNotch(50, fs, 30); // Q = 30 for 50Hz
+      const notch60 = createNotch(60, fs, 30); // Q = 30 for 60Hz
+
+      // Warm up filters
+      const warmupSamples = Math.max(1, Math.floor(fs * 0.5));
+      for (let i = 0; i < warmupSamples && i < sig.length; i++) {
+        let v = sig[i];
+        v = hp.process(v);
+        v = notch50.process(v);
+        v = notch60.process(v);
+        v = lp.process(v);
+      }
+
+      // Filter the signal
+      processedSignals[ch] = sig.map(v => {
+        let out = v;
+        out = hp.process(out);
+        out = notch50.process(out);
+        out = notch60.process(out);
+        out = lp.process(out);
+        return out;
+      });
+    }
   }
 
-  // Process all samples (now filters have settled, no transient)
+  // Construct processed samples
   const processedSamples = ds.samples
     .map((s, idx) => {
       return {
         t: s.t,
-        ch1: processCh(s.ch1, pipelines.ch1),
-        ch2: processCh(s.ch2, pipelines.ch2),
-        ch3: processCh(s.ch3, pipelines.ch3),
-        ch4: processCh(s.ch4, pipelines.ch4),
-        _originalIdx: idx, // track original index
-      } as EmgSample & { _originalIdx: number };
+        ch1: processedSignals.ch1[idx],
+        ch2: processedSignals.ch2[idx],
+        ch3: processedSignals.ch3[idx],
+        ch4: processedSignals.ch4[idx],
+        _originalIdx: idx,
+      };
     })
-    .filter((s) => s._originalIdx >= skipSamples) // Skip first N seconds
-    .map(({ _originalIdx, ...s }) => s as EmgSample); // Remove tracking field
+    .filter((s) => s._originalIdx >= skipSamples)
+    .map(({ _originalIdx, ...s }) => s as EmgSample);
 
   return {
     ...ds,
@@ -1117,29 +1133,65 @@ export function preprocessChannelAdvanced(
  * Tuned from ground-truth video labels
  */
 export const EXERCISE_CONFIG = {
+  walking: {
+    primaryChannels: ['ch3', 'ch4'] as Channel[],
+    minRepGapMs: 800,
+    thresholdPct: 70,
+    channelWeights: { ch1: 0.0, ch2: 0.0, ch3: 0.5, ch4: 0.5 }
+  },
+  stair_ascent: {
+    primaryChannels: ['ch1', 'ch3'] as Channel[],
+    minRepGapMs: 1000,
+    thresholdPct: 70,
+    channelWeights: { ch1: 0.6, ch2: 0.0, ch3: 0.4, ch4: 0.0 }
+  },
+  stair_descent: {
+    primaryChannels: ['ch1', 'ch2'] as Channel[],
+    minRepGapMs: 1000,
+    thresholdPct: 70,
+    channelWeights: { ch1: 0.7, ch2: 0.3, ch3: 0.0, ch4: 0.0 }
+  },
+  calf_raises: {
+    primaryChannels: ['ch3', 'ch4'] as Channel[],
+    minRepGapMs: 1500,
+    thresholdPct: 65,
+    channelWeights: { ch1: 0.0, ch2: 0.0, ch3: 0.7, ch4: 0.3 }
+  },
   lunges: {
-    primaryChannels: ['ch1', 'ch2'] as Channel[],  // RF + BF (balanced)
+    primaryChannels: ['ch1', 'ch2'] as Channel[],
     minRepGapMs: 1500,
     thresholdPct: 70,
     channelWeights: { ch1: 0.5, ch2: 0.5, ch3: 0.0, ch4: 0.0 }
   },
   leg_press: {
-    primaryChannels: ['ch2', 'ch1'] as Channel[],  // BF dominates, then RF
+    primaryChannels: ['ch1', 'ch3'] as Channel[],
     minRepGapMs: 1800,
     thresholdPct: 70,
-    channelWeights: { ch1: 0.35, ch2: 0.65, ch3: 0.0, ch4: 0.0 }  // BF 65%, RF 35%
+    channelWeights: { ch1: 0.6, ch2: 0.0, ch3: 0.4, ch4: 0.0 }
   },
-  squat: {
-    primaryChannels: ['ch1', 'ch2'] as Channel[],  // RF dominant, BF secondary
+  squats: {
+    primaryChannels: ['ch1', 'ch2'] as Channel[],
     minRepGapMs: 2000,
     thresholdPct: 70,
-    channelWeights: { ch1: 0.6, ch2: 0.4, ch3: 0.0, ch4: 0.0 }  // RF 60%, BF 40%
+    channelWeights: { ch1: 0.6, ch2: 0.4, ch3: 0.0, ch4: 0.0 }
   },
-  calf_raises: {
-    primaryChannels: ['ch3', 'ch4'] as Channel[],  // GAS dominant, TA secondary
-    minRepGapMs: 1500,
-    thresholdPct: 65,
-    channelWeights: { ch1: 0.0, ch2: 0.0, ch3: 0.7, ch4: 0.3 }  // GAS 70%, TA 30%
+  squat: {
+    primaryChannels: ['ch1', 'ch2'] as Channel[],
+    minRepGapMs: 2000,
+    thresholdPct: 70,
+    channelWeights: { ch1: 0.6, ch2: 0.4, ch3: 0.0, ch4: 0.0 }
+  },
+  jumping: {
+    primaryChannels: ['ch1', 'ch3'] as Channel[],
+    minRepGapMs: 1000,
+    thresholdPct: 70,
+    channelWeights: { ch1: 0.5, ch2: 0.0, ch3: 0.5, ch4: 0.0 }
+  },
+  cycling: {
+    primaryChannels: ['ch1', 'ch2', 'ch3'] as Channel[],
+    minRepGapMs: 900,
+    thresholdPct: 70,
+    channelWeights: { ch1: 0.5, ch2: 0.3, ch3: 0.2, ch4: 0.0 }
   }
 };
 
@@ -1236,75 +1288,78 @@ export function detectRepsMultiChannel(
 // ========== DATA CLEANING & EXPORT ==========
 
 /**
- * Interpolate null/missing values in a channel
- * Handles interleaved nulls where ESP32 nodes send on shared timestamp
- * (only 1 channel has value per row)
+ * Interpolate null/missing values in a channel using linear interpolation
+ * with forward/backward fill boundaries (limit_direction='both').
+ * Operates in single-pass O(N) time and space complexity.
  */
-export function interpolateChannel(signal: number[]): number[] {
-  if (!signal.length) return [];
+export function interpolateChannel(arr: (number | null | undefined)[]): number[] {
+  const n = arr.length;
+  if (n === 0) return [];
   
-  // Find non-null indices
-  const nonNullIdx: number[] = [];
-  const nonNullVals: number[] = [];
+  const result = new Array<number>(n);
   
-  for (let i = 0; i < signal.length; i++) {
-    if (signal[i] != null && !isNaN(signal[i])) {
-      nonNullIdx.push(i);
-      nonNullVals.push(signal[i]);
+  // Find first valid (non-null and finite) index
+  let firstValidIdx = -1;
+  for (let i = 0; i < n; i++) {
+    const v = arr[i];
+    if (v !== null && v !== undefined && !Number.isNaN(v) && Number.isFinite(v)) {
+      firstValidIdx = i;
+      break;
     }
   }
   
-  if (nonNullIdx.length === 0) return signal.map(() => 0); // All nulls → zeros
-  if (nonNullIdx.length === signal.length) return signal; // No nulls
+  // If no valid elements, fill with 0
+  if (firstValidIdx === -1) {
+    result.fill(0);
+    return result;
+  }
   
-  // Linear interpolation
-  const result = [...signal];
-  for (let i = 0; i < signal.length; i++) {
-    if (result[i] == null || isNaN(result[i])) {
-      // Find nearest non-null neighbors
-      let leftIdx = -1, rightIdx = -1;
-      for (let j = i - 1; j >= 0; j--) {
-        if (nonNullIdx.includes(j)) { leftIdx = j; break; }
+  // Backward fill the beginning
+  const firstVal = arr[firstValidIdx] as number;
+  for (let i = 0; i < firstValidIdx; i++) {
+    result[i] = firstVal;
+  }
+  result[firstValidIdx] = firstVal;
+  
+  let lastValidIdx = firstValidIdx;
+  let lastValidVal = firstVal;
+  
+  for (let i = firstValidIdx + 1; i < n; i++) {
+    const v = arr[i];
+    if (v !== null && v !== undefined && !Number.isNaN(v) && Number.isFinite(v)) {
+      // Linear interpolate between lastValidIdx and i
+      const currentVal = v;
+      const gap = i - lastValidIdx;
+      for (let j = lastValidIdx + 1; j < i; j++) {
+        const t = (j - lastValidIdx) / gap;
+        result[j] = lastValidVal + t * (currentVal - lastValidVal);
       }
-      for (let j = i + 1; j < signal.length; j++) {
-        if (nonNullIdx.includes(j)) { rightIdx = j; break; }
-      }
-      
-      if (leftIdx >= 0 && rightIdx >= 0) {
-        // Linear interpolation between left and right
-        const leftVal = result[leftIdx];
-        const rightVal = result[rightIdx];
-        const ratio = (i - leftIdx) / (rightIdx - leftIdx);
-        result[i] = leftVal + ratio * (rightVal - leftVal);
-      } else if (leftIdx >= 0) {
-        result[i] = result[leftIdx]; // Extend left
-      } else if (rightIdx >= 0) {
-        result[i] = result[rightIdx]; // Extend right
-      } else {
-        result[i] = 0; // Fallback
-      }
+      result[i] = currentVal;
+      lastValidIdx = i;
+      lastValidVal = currentVal;
     }
+  }
+  
+  // Forward fill the end
+  for (let i = lastValidIdx + 1; i < n; i++) {
+    result[i] = lastValidVal;
   }
   
   return result;
 }
 
 /**
- * Combine channel envelopes based on exercise type
- * Different exercises have different muscle dominance patterns
+ * Combine channel envelopes based on exercise type.
+ * Pulls channel weights dynamically from EXERCISE_CONFIG.
  */
 export function combineChannelsPerExercise(
   envelopes: Record<Channel, number[]>,
   exercise: string = "lunges"
 ): number[] {
-  const configs: Record<string, Record<Channel, number>> = {
-    lunges: { ch1: 0.5, ch2: 0.5, ch3: 0.0, ch4: 0.0 },        // RF + BF equal
-    leg_press: { ch1: 0.6, ch2: 0.0, ch3: 0.4, ch4: 0.0 },    // RF 60% + GAS 40%
-    squat: { ch1: 0.6, ch2: 0.4, ch3: 0.0, ch4: 0.0 },        // RF 60% + BF 40%
-    calf_raises: { ch1: 0.0, ch2: 0.0, ch3: 0.7, ch4: 0.3 },  // GAS 70% + TA 30%
-  };
+  const normEx = exercise.toLowerCase();
+  const config = EXERCISE_CONFIG[normEx as keyof typeof EXERCISE_CONFIG] || EXERCISE_CONFIG.lunges;
+  const weights = config.channelWeights;
   
-  const weights = configs[exercise] || configs.lunges;
   const length = Math.max(
     envelopes.ch1?.length || 0,
     envelopes.ch2?.length || 0,
