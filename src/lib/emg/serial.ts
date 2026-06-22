@@ -3,6 +3,7 @@
 
 import type { EmgDataset, EmgSample } from "./signal";
 import { preprocessDataset } from "./signal";
+import { FilterBank } from "./filters";
 
 export interface SerialStats {
   rxPackets: number;
@@ -31,6 +32,7 @@ class EmgSerialManager {
   private port: any | null = null;
   private reader: any | null = null;
   private reading = false;
+  private filterBank = new FilterBank();
 
   public connected = false;
   public stats: SerialStats = { rxPackets: 0, rxErrors: 0, bytesReceived: 0 };
@@ -94,6 +96,7 @@ class EmgSerialManager {
       this.connected = true;
       this.stats = { rxPackets: 0, rxErrors: 0, bytesReceived: 0 };
       this.channelData = { 1: [], 2: [], 3: [], 4: [] };
+      this.filterBank.resetAll();
       this.notify();
 
       // Start asynchronous reading loop
@@ -106,6 +109,7 @@ class EmgSerialManager {
 
   public async disconnect(): Promise<void> {
     this.reading = false;
+    this.filterBank.resetAll();
 
     if (this.reader) {
       try {
@@ -179,14 +183,23 @@ class EmgSerialManager {
     if (!Array.isArray(mv) || !mv.length) return;
 
     const dt_us = packet.dt_us ?? 1000;
-    this.hwSampleRate = dt_us > 0 ? Math.round(1_000_000 / dt_us) : 1000;
+    
+    // Update hardware sample rate from dt_us (authoritative)
+    if (dt_us > 0) {
+      this.hwSampleRate = Math.round(1_000_000 / dt_us);
+      // Update filter coefficients for this channel's actual sample rate
+      this.filterBank.updateFs(ch, this.hwSampleRate);
+    }
 
-    // Convert raw values (12-bit ADC -> mV)
+    // Convert raw ADC values (12-bit) to mV
     const mvValues = mv.map((v) => Math.round((Number(v) / 4095) * 3300 * 10) / 10);
+
+    // Apply filtering to get clean signal
+    const filteredSamples = this.filterBank.process(ch, mvValues);
 
     // Buffer updates (keep last 500 samples for rolling scope)
     const buffer = this.channelData[ch] ?? [];
-    for (const v of mvValues) {
+    for (const v of filteredSamples) {
       buffer.push(v);
       if (buffer.length > 500) buffer.shift();
     }
@@ -200,17 +213,16 @@ class EmgSerialManager {
 
       // ESP32 sends batched samples. We estimate individual sample timestamps
       const dtMs = dt_us / 1000;
-      for (let i = 0; i < mvValues.length; i++) {
-        const offsetT = t - (mvValues.length - 1 - i) * (dtMs / 1000);
+      for (let i = 0; i < filteredSamples.length; i++) {
+        const offsetT = t - (filteredSamples.length - 1 - i) * (dtMs / 1000);
 
-        // Save raw values to aligned rows
-        // Since ESP32 sends async packets per channel, we store them and we'll align them on stop()
+        // Save filtered values to aligned rows
         this.recordedSamples.push({
           t: offsetT,
-          ch1: ch === 1 ? mvValues[i] : NaN,
-          ch2: ch === 2 ? mvValues[i] : NaN,
-          ch3: ch === 3 ? mvValues[i] : NaN,
-          ch4: ch === 4 ? mvValues[i] : NaN,
+          ch1: ch === 1 ? filteredSamples[i] : NaN,
+          ch2: ch === 2 ? filteredSamples[i] : NaN,
+          ch3: ch === 3 ? filteredSamples[i] : NaN,
+          ch4: ch === 4 ? filteredSamples[i] : NaN,
         });
       }
     }
@@ -234,6 +246,7 @@ class EmgSerialManager {
       originMs: Date.now(),
       timestamp: new Date().toISOString(),
     };
+    this.filterBank.resetAll();
     this.isRecording = true;
   }
 
