@@ -286,6 +286,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     sessionElapsedTime: 0, // in seconds
     scrollOffset: 0, // Dino-style: how far we've scrolled through hurdles (pixels)
     scrollSpeed: 60, // px/sec continuous background scroll
+    jumpElapsed: 0, // jump timer for interpolation
     width: 0,
     height: 0,
     threshold: 30,
@@ -458,14 +459,39 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         }
       }
 
-      // Continuous background scroll towards the dino during active gameplay
-      const gameplayPhases = ["ready", "approaching", "at_hurdle", "jumping", "hit", "resting"];
-      if (gameplayPhases.includes(gameRef.current.phase)) {
-        gameRef.current.scrollOffset += gameRef.current.scrollSpeed * dt;
+      // Calculate phase-driven scrollOffset to coordinate hurdle approach and clearance
+      const canvas = gameCanvasRef.current;
+      const w = canvas ? canvas.clientWidth : 800;
+      const cx = w * 0.22;
+      const hurdleStartX = w * 0.92;
+      const hurdleSpacing = 320;
+      const i = gameRef.current.currentHurdle;
+
+      const offsetResting = hurdleStartX + i * hurdleSpacing - (cx + 250);
+      const offsetAtHurdle = hurdleStartX + i * hurdleSpacing - (cx + 35);
+      const offsetNextResting = hurdleStartX + (i + 1) * hurdleSpacing - (cx + 250);
+
+      const phase = gameRef.current.phase;
+      if (phase === "setup" || phase === "calibrating" || phase === "resting" || phase === "ready") {
+        gameRef.current.scrollOffset = offsetResting;
+      } else if (phase === "approaching") {
+        const t = Math.min(1.0, gameRef.current.approachT / 0.6);
+        const ease = t * t * (3 - 2 * t);
+        gameRef.current.scrollOffset = offsetResting + (offsetAtHurdle - offsetResting) * ease;
+      } else if (phase === "at_hurdle") {
+        gameRef.current.scrollOffset = offsetAtHurdle;
+      } else if (phase === "jumping") {
+        gameRef.current.jumpElapsed += dt;
+        const t = Math.min(1.0, gameRef.current.jumpElapsed / 0.515);
+        const ease = t * t * (3 - 2 * t);
+        gameRef.current.scrollOffset = offsetAtHurdle + (offsetNextResting - offsetAtHurdle) * ease;
+      } else if (phase === "hit") {
+        const t = Math.min(1.0, (1.2 - gameRef.current.hitTimer) / 1.2);
+        const ease = t * t * (3 - 2 * t);
+        gameRef.current.scrollOffset = offsetAtHurdle + (offsetResting - offsetAtHurdle) * ease;
       }
 
       // Update Phase Logic
-      const phase = gameRef.current.phase;
       if (phase === "setup") {
         // Maintain preview
       } else if (phase === "resting") {
@@ -638,14 +664,12 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       changePhase("jumping");
       gameRef.current.charVy = -490;
       gameRef.current.flexThresholdHeld = 0;
+      gameRef.current.jumpElapsed = 0;
 
       // Log attempts
       const attempt = makeAttemptRecord("success");
       const hIdx = gameRef.current.currentHurdle;
       gameRef.current.hurdleLog[hIdx].attempts.push(attempt);
-
-      // Dino-style: scroll forward when success
-      gameRef.current.scrollOffset += 80;
 
       // Flash & particles
       const canvas = gameCanvasRef.current;
@@ -670,9 +694,6 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       const attempt = makeAttemptRecord("fail");
       const hIdx = gameRef.current.currentHurdle;
       gameRef.current.hurdleLog[hIdx].attempts.push(attempt);
-
-      // Dino-style: scroll backward (rewind) when fail
-      gameRef.current.scrollOffset = Math.max(0, gameRef.current.scrollOffset - 40);
 
       // Shake & particles
       gameRef.current.shake = { x: 0, y: 0, t: 0.35, mag: 10 };
@@ -928,7 +949,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
       // === 3. Hurdles (cactus-style neon obelisks scrolling right→left) ===
       const hH = hurdleVisualH(h);
-      const hurdleSpacing = 140;
+      const hurdleSpacing = 320;
       const hurdleStartX = w * 0.92;
       const hw = 16;
 
@@ -1011,7 +1032,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       }
       ctx.textAlign = "left";
 
-      // === 4. Neon T-Rex character ===
+      // === 4. Neon Stick Man character ===
       gameRef.current.charAnimT += dt;
       const cx = w * 0.22;
       const cy = ty + gameRef.current.charY;
@@ -1028,7 +1049,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       const shadowScale = Math.max(0.3, 1 - Math.abs(gameRef.current.charY) / 60);
       ctx.fillStyle = `rgba(0, 229, 200, ${0.25 * shadowScale})`;
       ctx.beginPath();
-      ctx.ellipse(0, 2, 22 * shadowScale, 4 * shadowScale, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 2, 16 * shadowScale, 3 * shadowScale, 0, 0, Math.PI * 2);
       ctx.fill();
 
       // Hit rotation
@@ -1038,80 +1059,132 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         ctx.globalAlpha = Math.max(0.2, gameRef.current.hitTimer / 1.2);
       }
 
-      // === T-Rex wireframe (neon outline) ===
+      // === Stick Man wireframe (neon outline) ===
       ctx.shadowColor = bodyCol;
       ctx.shadowBlur = phaseNow === "jumping" ? 24 : 14;
       ctx.strokeStyle = bodyCol;
       ctx.fillStyle = `${bodyCol}22`;
-      ctx.lineWidth = 2.2;
+      ctx.lineWidth = 3.2; // robust line weight for a clear stick figure
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
 
-      // Body (chunky dino silhouette, baseline = feet at y=0)
-      ctx.beginPath();
-      // Tail
-      ctx.moveTo(20, -8);
-      ctx.lineTo(28, -14);
-      ctx.lineTo(30, -10);
-      ctx.lineTo(22, -4);
-      // Back
-      ctx.lineTo(10, -18);
-      ctx.lineTo(-6, -26);
-      // Neck + head
-      ctx.lineTo(-14, -34);
-      ctx.lineTo(-22, -36);
-      ctx.lineTo(-26, -32);
-      ctx.lineTo(-26, -26);
-      ctx.lineTo(-18, -24);
-      // Jaw
-      ctx.lineTo(-14, -22);
-      ctx.lineTo(-8, -20);
-      // Belly
-      ctx.lineTo(-2, -10);
-      ctx.lineTo(8, -6);
-      ctx.lineTo(18, -6);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+      const runCycle = gameRef.current.charAnimT * 12;
 
-      // Eye
-      ctx.fillStyle = bodyCol;
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(-22, -31, 1.4, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Tiny arm
-      ctx.shadowBlur = 6;
-      ctx.beginPath();
-      ctx.moveTo(-4, -18);
-      ctx.lineTo(-6, -14);
-      ctx.lineTo(-3, -12);
-      ctx.stroke();
-
-      // Legs — animated run cycle (only on ground phases)
-      const runCycle = gameRef.current.charAnimT * 14;
-      let leg1Y = 0, leg2Y = 0;
-      if (phaseNow === "approaching" || phaseNow === "at_hurdle" || phaseNow === "ready" || phaseNow === "resting") {
-        leg1Y = Math.max(0, Math.sin(runCycle) * 4);
-        leg2Y = Math.max(0, Math.sin(runCycle + Math.PI) * 4);
-      } else if (phaseNow === "jumping") {
-        leg1Y = -3; leg2Y = -5;
+      // Define body coordinates relative to (0, 0)
+      // Head (circle)
+      let headX = 6;
+      let headY = -35;
+      if (phaseNow === "jumping") {
+        headX = 5;
+        headY = -35;
+      } else if (phaseNow === "hit") {
+        headX = 0;
+        headY = -35;
       }
 
-      ctx.lineWidth = 3;
-      ctx.shadowBlur = 10;
-      // Back leg
       ctx.beginPath();
-      ctx.moveTo(10, -6);
-      ctx.lineTo(8, -1 - leg2Y);
-      ctx.lineTo(14, 0 - leg2Y);
+      ctx.arc(headX, headY, 5.5, 0, Math.PI * 2);
+      ctx.fill();
       ctx.stroke();
-      // Front leg
+
+      // Torso/Spine
+      let hipX = 0, hipY = -16;
+      let shoulderX = 4, shoulderY = -28;
+      if (phaseNow === "jumping") {
+        hipX = 0; hipY = -16;
+        shoulderX = 3; shoulderY = -28;
+      } else if (phaseNow === "hit") {
+        hipX = -5; hipY = -14;
+        shoulderX = 2; shoulderY = -26;
+      }
+
       ctx.beginPath();
-      ctx.moveTo(-2, -6);
-      ctx.lineTo(-4, -1 - leg1Y);
-      ctx.lineTo(2, 0 - leg1Y);
+      ctx.moveTo(hipX, hipY);
+      ctx.lineTo(shoulderX, shoulderY);
+      ctx.stroke();
+
+      // Arms
+      ctx.beginPath();
+      if (phaseNow === "jumping") {
+        // Arm 1 (front) - raised high
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(shoulderX + 6, shoulderY - 8);
+        ctx.lineTo(shoulderX + 12, shoulderY - 14);
+        // Arm 2 (back) - raised high
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(shoulderX - 6, shoulderY - 8);
+        ctx.lineTo(shoulderX - 12, shoulderY - 14);
+      } else if (phaseNow === "hit") {
+        // Arm 1 - flailing right
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(shoulderX + 10, shoulderY - 2);
+        ctx.lineTo(shoulderX + 15, shoulderY - 8);
+        // Arm 2 - flailing left
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(shoulderX - 10, shoulderY + 4);
+        ctx.lineTo(shoulderX - 15, shoulderY + 8);
+      } else {
+        // Running arms (swinging back and forth)
+        const arm1ElbowX = shoulderX + 4 + Math.cos(runCycle) * 3;
+        const arm1ElbowY = shoulderY + 4 + Math.sin(runCycle) * 2;
+        const arm1HandX = shoulderX + 8 + Math.cos(runCycle) * 5;
+        const arm1HandY = shoulderY + 8;
+        
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(arm1ElbowX, arm1ElbowY);
+        ctx.lineTo(arm1HandX, arm1HandY);
+
+        const arm2ElbowX = shoulderX - 4 - Math.cos(runCycle) * 3;
+        const arm2ElbowY = shoulderY + 4 - Math.sin(runCycle) * 2;
+        const arm2HandX = shoulderX - 8 - Math.cos(runCycle) * 5;
+        const arm2HandY = shoulderY + 8;
+
+        ctx.moveTo(shoulderX, shoulderY);
+        ctx.lineTo(arm2ElbowX, arm2ElbowY);
+        ctx.lineTo(arm2HandX, arm2HandY);
+      }
+      ctx.stroke();
+
+      // Legs
+      ctx.beginPath();
+      if (phaseNow === "jumping") {
+        // Leg 1 (front) - bent under
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(hipX + 6, hipY + 6);
+        ctx.lineTo(hipX + 2, hipY + 12);
+        // Leg 2 (back) - bent under
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(hipX - 4, hipY + 6);
+        ctx.lineTo(hipX - 8, hipY + 12);
+      } else if (phaseNow === "hit") {
+        // Leg 1 - flying right
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(hipX + 8, hipY + 6);
+        ctx.lineTo(hipX + 14, hipY + 10);
+        // Leg 2 - flying left
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(hipX - 8, hipY + 4);
+        ctx.lineTo(hipX - 12, hipY + 8);
+      } else {
+        // Running legs (cycling)
+        const leg1KneeX = hipX + 3 + Math.sin(runCycle) * 5;
+        const leg1KneeY = hipY + 8;
+        const leg1FootX = hipX + 2 + Math.sin(runCycle) * 8;
+        const leg1FootY = 0 - Math.max(0, Math.cos(runCycle) * 3);
+
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(leg1KneeX, leg1KneeY);
+        ctx.lineTo(leg1FootX, leg1FootY);
+
+        const leg2KneeX = hipX - 3 - Math.sin(runCycle) * 5;
+        const leg2KneeY = hipY + 8;
+        const leg2FootX = hipX - 2 - Math.sin(runCycle) * 8;
+        const leg2FootY = 0 - Math.max(0, -Math.cos(runCycle) * 3);
+
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(leg2KneeX, leg2KneeY);
+        ctx.lineTo(leg2FootX, leg2FootY);
+      }
       ctx.stroke();
 
       ctx.restore();
@@ -1946,19 +2019,19 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
       {/* 1. SETUP PANEL SCREEN */}
       {phase === "setup" && (
-        <div className="flex-1 p-3 overflow-auto">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+        <div className="flex-1 p-4 overflow-auto bg-background/90">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 max-w-7xl mx-auto">
             {/* Form settings card */}
-            <div className="md:col-span-7 flex flex-col gap-3">
-              <div className="panel flex flex-col p-3">
-                <header className="text-glow-green text-primary font-bold text-xs uppercase tracking-widest border-b border-border/60 pb-2 mb-3">
+            <div className="md:col-span-7 flex flex-col gap-4">
+              <div className="panel-glass flex flex-col p-5 shadow-2xl border border-border/60">
+                <header className="text-glow-green text-primary font-bold text-xs uppercase tracking-widest border-b border-border/60 pb-2 mb-4">
                   MyoHurdle Protocol Settings
                 </header>
-
-                <div className="grid grid-cols-1 gap-3">
+ 
+                <div className="grid grid-cols-1 gap-4">
                   {/* Name field */}
-                  <div className="space-y-1">
-                    <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                       Participant ID
                     </label>
                     <input
@@ -1977,14 +2050,14 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                           targetLimb,
                         });
                       }}
-                      className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                      className="w-full bg-muted/40 border border-border/80 rounded-md p-2.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none"
                     />
                   </div>
-
+ 
                   {/* Sex / Age */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                         Sex
                       </label>
                       <select
@@ -2002,14 +2075,14 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted/40 border border-border/80 rounded-md p-2.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none"
                       >
                         <option value="male">Male</option>
                         <option value="female">Female</option>
                       </select>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                         Age (years)
                       </label>
                       <input
@@ -2028,15 +2101,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted/40 border border-border/80 rounded-md p-2.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none"
                       />
                     </div>
                   </div>
-
+ 
                   {/* Weight / Height */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                         Weight (kg)
                       </label>
                       <input
@@ -2055,11 +2128,11 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted/40 border border-border/80 rounded-md p-2.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                         Height (cm)
                       </label>
                       <input
@@ -2078,15 +2151,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted/40 border border-border/80 rounded-md p-2.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none"
                       />
                     </div>
                   </div>
-
+ 
                   {/* Target limb / exercises */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1 col-span-1">
-                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1.5 col-span-1">
+                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                         Target Limb
                       </label>
                       <select
@@ -2104,15 +2177,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb: e.target.value,
                           });
                         }}
-                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted/40 border border-border/80 rounded-md p-2.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none"
                       >
                         <option value="leg">🦵 Leg Muscles</option>
                         <option value="arm">💪 Arm Muscles</option>
                         <option value="weightlifting">🏋️ Weightlifting</option>
                       </select>
                     </div>
-                    <div className="space-y-1 col-span-1">
-                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <div className="space-y-1.5 col-span-1">
+                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                         Exercise
                       </label>
                       <div className="flex gap-1.5">
@@ -2131,7 +2204,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                               targetLimb,
                             });
                           }}
-                          className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                          className="w-full bg-muted/40 border border-border/80 rounded-md p-2.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none"
                         >
                           {exerciseList.map((opt) => (
                             <option key={opt.value} value={opt.value}>
@@ -2157,15 +2230,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                               setExercise(val);
                             }
                           }}
-                          className="shrink-0 size-8 border border-border"
+                          className="shrink-0 size-[38px] rounded-md border border-border bg-muted/20 hover:bg-muted/50 transition-colors"
                           title="Add Custom Exercise"
                         >
                           <Plus className="size-3.5" />
                         </Button>
                       </div>
                     </div>
-                    <div className="space-y-1 col-span-1">
-                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <div className="space-y-1.5 col-span-1">
+                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                         Trial No.
                       </label>
                       <select
@@ -2183,7 +2256,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                             targetLimb,
                           });
                         }}
-                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted/40 border border-border/80 rounded-md p-2.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none"
                       >
                         {[1, 2, 3, 4, 5].map((n) => (
                           <option key={n} value={n}>
@@ -2193,10 +2266,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       </select>
                     </div>
                   </div>
-
+ 
                   {/* Hurdles count slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[9px] uppercase tracking-widest text-muted-foreground">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                       <label>Number of Hurdles</label>
                       <span className="text-primary font-bold">{numHurdles}</span>
                     </div>
@@ -2206,13 +2279,13 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       max={50}
                       value={numHurdles}
                       onChange={(e) => setNumHurdles(parseInt(e.target.value))}
-                      className="w-full accent-primary"
+                      className="w-full accent-primary h-1 bg-muted rounded-lg appearance-none cursor-pointer"
                     />
                   </div>
-
+ 
                   {/* Attempt Time Limit slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[9px] uppercase tracking-widest text-muted-foreground">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                       <label>Attempt Time Limit</label>
                       <span className="text-primary font-bold">{attemptTimeLimit} s</span>
                     </div>
@@ -2222,13 +2295,13 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       max={15}
                       value={attemptTimeLimit}
                       onChange={(e) => setAttemptTimeLimit(parseInt(e.target.value))}
-                      className="w-full accent-primary"
+                      className="w-full accent-primary h-1 bg-muted rounded-lg appearance-none cursor-pointer"
                     />
                   </div>
-
+ 
                   {/* Session Time Limit slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[9px] uppercase tracking-widest text-muted-foreground">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                       <label>Session Time Limit</label>
                       <span className="text-primary font-bold">{sessionTimeLimit} min</span>
                     </div>
@@ -2238,22 +2311,22 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       max={30}
                       value={sessionTimeLimit}
                       onChange={(e) => setSessionTimeLimit(parseInt(e.target.value))}
-                      className="w-full accent-primary"
+                      className="w-full accent-primary h-1 bg-muted rounded-lg appearance-none cursor-pointer"
                     />
                   </div>
-
+ 
                   {/* Channels Selection Picker */}
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                  <div className="space-y-2">
+                    <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                       Control Channels
                     </label>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => setActiveChannels([0])}
-                        className={`px-2.5 py-1.5 text-[10px] font-mono tracking-wider border rounded-sm transition-all ${
+                        className={`px-3 py-2 text-[10px] font-mono tracking-wider border rounded-md transition-all hover:scale-[1.01] hover:shadow-sm active:scale-[0.99] cursor-pointer ${
                           activeChannels.includes(0)
                             ? "bg-primary/20 border-primary text-primary"
-                            : "bg-muted/60 border-border text-muted-foreground hover:border-primary/40"
+                            : "bg-muted/40 border-border/80 text-muted-foreground hover:border-primary/40 hover:text-foreground"
                         }`}
                       >
                         🤖 Auto (Highest RMS)
@@ -2283,10 +2356,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                               }
                               setActiveChannels(next);
                             }}
-                            className={`px-2.5 py-1.5 text-[10px] font-mono tracking-wider border rounded-sm transition-all ${
+                            className={`px-3 py-2 text-[10px] font-mono tracking-wider border rounded-md transition-all hover:scale-[1.01] hover:shadow-sm active:scale-[0.99] cursor-pointer ${
                               isActive
                                 ? "bg-primary/20 border-primary text-primary"
-                                : "bg-muted/60 border-border text-muted-foreground hover:border-primary/40"
+                                : "bg-muted/40 border-border/80 text-muted-foreground hover:border-primary/40 hover:text-foreground"
                             }`}
                           >
                             CH{chId} · {label.split(" (")[0]}
@@ -2295,17 +2368,17 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       })}
                     </div>
                   </div>
-
+ 
                   {/* Multi-muscle select mode */}
                   {activeChannels.length > 1 && (
-                    <div className="space-y-1">
-                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
                         Multi-Muscle Control Mode
                       </label>
                       <select
                         value={combMode}
                         onChange={(e) => setCombMode(e.target.value as any)}
-                        className="w-full bg-muted border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50"
+                        className="w-full bg-muted/40 border border-border/80 rounded-md p-2.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none"
                       >
                         <option value="avg">Average RMS (Smooth combined effort)</option>
                         <option value="max">Max RMS (Any muscle above threshold)</option>
@@ -2315,35 +2388,35 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       </select>
                     </div>
                   )}
-
+ 
                   {/* Live RMS Meter Preview */}
-                  <div className="bg-muted/50 border border-border/80 rounded-sm p-2.5 flex items-center justify-between text-xs tracking-wider">
+                  <div className="bg-muted/30 border border-border/60 rounded-md p-3 flex items-center justify-between text-xs tracking-wider">
                     <span className="text-[10px] uppercase font-bold text-muted-foreground">
                       Live Signal Preview:
                     </span>
-                    <span className="font-mono text-primary font-bold">
+                    <span className="font-mono text-primary font-bold text-glow-green">
                       {liveCombinedRms} mV{" "}
-                      <span className="text-[9px] text-muted-foreground">
+                      <span className="text-[9px] text-muted-foreground font-normal">
                         [{selectedChannelText}]
                       </span>
                     </span>
                   </div>
                 </div>
               </div>
-
+ 
               {/* Step 2: Calibration settings card */}
-              <div className="panel p-3 flex flex-col gap-3">
-                <header className="text-glow-green text-primary font-bold text-xs uppercase tracking-widest border-b border-border/60 pb-2 mb-2">
+              <div className="panel-glass p-5 flex flex-col gap-4 border border-border/60 shadow-2xl">
+                <header className="text-glow-green text-primary font-bold text-xs uppercase tracking-widest border-b border-border/60 pb-2 mb-1">
                   Calibration Target Threshold
                 </header>
-
+ 
                 <div className="text-[11px] leading-relaxed text-muted-foreground mb-1">
                   Flex your target muscle(s) at your desired contraction level to set threshold
                   limit. Baseline represents resting levels.
                 </div>
-
+ 
                 {calibrated ? (
-                  <div className="flex items-center gap-2 p-2 bg-primary/10 border border-primary/30 text-primary rounded-sm text-xs font-bold uppercase tracking-wider">
+                  <div className="flex items-center gap-2 p-3 bg-primary/10 border border-primary/30 text-primary rounded-md text-xs font-bold uppercase tracking-wider">
                     <CheckCircle className="size-4 shrink-0" />
                     <span>
                       Target Strength Active:{" "}
@@ -2352,14 +2425,14 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                     </span>
                   </div>
                 ) : (
-                  <div className="text-[10px] font-mono uppercase text-glow-amber text-orange-400 bg-orange-400/5 border border-orange-400/25 p-2 rounded-sm mb-1">
+                  <div className="text-[10px] font-mono uppercase text-glow-amber text-orange-400 bg-orange-400/5 border border-orange-400/25 p-3 rounded-md mb-1">
                     ⚠ Calibration Pending — flex target set to 30 mV default.
                   </div>
                 )}
-
+ 
                 <div className="flex gap-2">
                   <Button
-                    className="flex-1 uppercase font-bold tracking-wider text-xs border border-primary/50 text-glow-green"
+                    className="flex-1 uppercase font-bold tracking-wider text-xs border border-primary/50 text-glow-green rounded-md py-4 bg-primary/10 hover:bg-primary/25 cursor-pointer glow-btn transition-all"
                     onClick={runCalibration}
                     disabled={!connected}
                   >
@@ -2367,7 +2440,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   </Button>
                   <Button
                     variant="secondary"
-                    className="uppercase font-bold tracking-wider text-xs border border-border"
+                    className="uppercase font-bold tracking-wider text-xs border border-border hover:bg-muted/40 rounded-md py-4 transition-colors cursor-pointer"
                     onClick={skipCalibration}
                   >
                     Skip
@@ -2377,15 +2450,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
             </div>
 
             {/* Right Column: Electrode placement and targeted instructions */}
-            <div className="md:col-span-5 flex flex-col gap-3">
-              <div className="panel p-3 flex flex-col">
-                <header className="flex items-center justify-between border-b border-border/60 pb-2 mb-3">
+            <div className="md:col-span-5 flex flex-col gap-4">
+              <div className="panel-glass p-5 flex flex-col border border-border/60 shadow-2xl">
+                <header className="flex items-center justify-between border-b border-border/60 pb-2 mb-4">
                   <span className="text-glow-cyan text-[var(--neon-cyan)] font-bold text-xs uppercase tracking-widest">
                     Electrode Guide
                   </span>
                   <button
                     onClick={() => setAnatomyZoom((z) => (z === 1.0 ? 1.6 : 1.0))}
-                    className="flex items-center gap-1.5 px-2 py-0.5 border border-border rounded-sm hover:border-primary/50 text-[9px] font-bold uppercase tracking-wider"
+                    className="flex items-center gap-1.5 px-2.5 py-1 border border-border rounded-md hover:border-primary/50 text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer bg-muted/20 hover:bg-muted/40"
                   >
                     {anatomyZoom === 1.0 ? (
                       <ZoomIn className="size-3" />
@@ -2395,12 +2468,12 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                     Zoom
                   </button>
                 </header>
-
-                <div className="flex justify-center items-center py-4 bg-black/40 border border-border rounded-sm relative mb-4 overflow-hidden" style={{minHeight: '400px'}}>
+ 
+                <div className="flex justify-center items-center py-4 bg-black/60 border border-border rounded-md relative mb-4 overflow-hidden" style={{minHeight: '400px'}}>
                   <canvas ref={anatomyCanvasRef} className="w-[220px] h-[320px] block" />
                 </div>
-
-                <div className="bg-primary/5 border border-primary/20 rounded-sm p-3 font-mono text-[10px] leading-relaxed text-muted-foreground">
+ 
+                <div className="bg-primary/5 border border-primary/20 rounded-md p-4 font-mono text-[10px] leading-relaxed text-muted-foreground shadow-inner">
                   <h4 className="text-glow-green text-primary font-bold text-xs uppercase tracking-wider mb-2">
                     Muscle Target Placement
                   </h4>
@@ -2427,13 +2500,13 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 </div>
               </div>
             </div>
-
+ 
             {/* Launch button */}
-            <div className="col-span-12 mt-3 px-3">
+            <div className="col-span-12 mt-4 px-3">
               <Button
                 onClick={beginProtocol}
                 disabled={!calibrated}
-                className="w-full py-6 uppercase font-bold tracking-widest text-sm bg-gradient-to-r from-primary to-[#006eff] text-black shadow-lg shadow-primary/20 rounded-sm disabled:opacity-40 hover:scale-[1.01] transition-all"
+                className="w-full py-7 uppercase font-bold tracking-widest text-xs bg-gradient-to-r from-primary via-[#00c9aa] to-[#006eff] text-black shadow-lg shadow-primary/20 rounded-md disabled:opacity-40 hover:scale-[1.005] active:scale-[0.995] hover:shadow-primary/45 transition-all glow-btn cursor-pointer"
               >
                 Begin Game Protocol →
               </Button>
@@ -2441,11 +2514,11 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
           </div>
         </div>
       )}
-
+ 
       {/* 2. CALIBRATION OVERLAY SCREEN */}
       {phase === "calibrating" && (
         <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background/95">
-          <div className="panel max-w-sm w-full p-6 text-center flex flex-col gap-4 border-primary">
+          <div className="panel-glass max-w-sm w-full p-6 text-center flex flex-col gap-4 border-primary/50 shadow-2xl">
             <header className="border-b border-border pb-3">
               <h2 className="text-glow-green text-primary font-bold text-base uppercase tracking-widest">
                 System Calibration
@@ -2518,10 +2591,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
       {/* 4. AT-HURDLE INTERACTIVE FLEX BAR */}
       {phase === "at_hurdle" && (
-        <div className="flex-1 p-3 flex flex-col items-center justify-center bg-background/95">
-          <div className="panel max-w-lg w-full p-4 flex flex-col gap-4 border-primary">
+        <div className="flex-1 p-3 flex flex-col items-center justify-center bg-background/95 backdrop-blur-sm">
+          <div className="panel-glass max-w-lg w-full p-5 flex flex-col gap-4 border-primary/40 shadow-2xl">
             {/* Header row */}
-            <div className="flex justify-between items-center border-b border-border pb-2.5">
+            <div className="flex justify-between items-center border-b border-border/60 pb-3">
               <div>
                 <h3 className="font-mono text-xs font-bold tracking-widest text-foreground/90">
                   HURDLE {currentHurdle + 1} / {numHurdles}
@@ -2530,56 +2603,56 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Elapsed: {Math.max(0, sessionTimeLimit * 60 - sessionTimeRemaining).toFixed(1)}s / {sessionTimeLimit * 60}s
                 </div>
               </div>
-
+ 
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[9px] font-bold text-orange-400 bg-orange-400/10 border border-orange-400/25 px-2.5 py-0.5 rounded-full uppercase tracking-widest">
+                <span className="font-mono text-[9px] font-bold text-orange-400 bg-orange-400/10 border border-orange-400/30 px-3 py-1 rounded-full uppercase tracking-widest">
                   Attempt {totalAttempts}
                 </span>
-
+ 
                 {/* Large countdown timer display */}
                 <div className="font-mono font-bold text-2xl text-primary text-glow-green ml-auto">
                   {countdownDisplay}s
                 </div>
               </div>
             </div>
-
+ 
             {/* EMG Power bar indicator */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[9px] font-mono text-muted-foreground tracking-widest uppercase">
+              <div className="flex items-center justify-between text-[9px] font-mono text-muted-foreground tracking-widest uppercase font-semibold">
                 <span>Rest</span>
-                <span className="text-primary text-glow-green">Target Flex ({threshold} mV)</span>
+                <span className="text-primary text-glow-green font-bold">Target Flex ({threshold} mV)</span>
               </div>
-
-              <div className="h-10 bg-muted border border-border/80 rounded-sm relative overflow-hidden flex items-center">
+ 
+              <div className="h-11 bg-muted/60 border border-border/40 rounded-md relative overflow-hidden flex items-center shadow-inner">
                 {/* Contraction level fill bar */}
                 <div
                   className={`h-full transition-all duration-75 ${
                     liveCombinedRms >= threshold
                       ? "bg-gradient-to-r from-emerald-500 to-primary glow-green"
                       : liveCombinedRms >= threshold * 0.75
-                        ? "bg-gradient-to-r from-orange-500 to-amber-400"
+                        ? "bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.3)]"
                         : "bg-gradient-to-r from-blue-600 to-[#00b0ff]"
                   }`}
                   style={{ width: `${Math.min((liveCombinedRms / 300) * 100, 100)}%` }}
                 />
-
+ 
                 {/* Target line indicator */}
                 <div
                   className="absolute top-0 bottom-0 w-[2px] bg-slate-100 z-10 shadow-[0_0_8px_white]"
                   style={{ left: `${Math.min((threshold / 300) * 100, 96)}%` }}
                 />
               </div>
-
-              <div className="font-mono text-3xl font-bold tracking-tight text-glow-green text-primary text-center">
-                {liveCombinedRms} <span className="text-[11px] text-muted-foreground">mV</span>
+ 
+              <div className="font-mono text-4xl font-extrabold tracking-tight text-glow-green text-primary text-center my-1">
+                {liveCombinedRms} <span className="text-xs text-muted-foreground font-normal">mV</span>
               </div>
-
+ 
               <div
                 className={`text-[9px] font-mono tracking-widest uppercase text-center ${
                   liveCombinedRms >= threshold
-                    ? "text-primary text-glow-green"
+                    ? "text-primary text-glow-green font-bold"
                     : liveCombinedRms >= threshold * 0.75
-                      ? "text-orange-400 active text-glow-amber animate-pulse"
+                      ? "text-orange-400 active text-glow-amber animate-pulse font-bold"
                       : "text-muted-foreground"
                 }`}
               >
@@ -2590,18 +2663,18 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                     : "FLEX YOUR MUSCLE TO CLEAR HURDLE"}
               </div>
             </div>
-
+ 
             {/* Waves Canvas Scope section */}
-            <div className="bg-muted/70 border border-border/60 p-2 rounded-sm relative">
+            <div className="bg-black/40 border border-border/60 p-3 rounded-md relative shadow-inner">
               <canvas ref={waveCanvasRef} className="w-full h-[60px] block" />
-              <span className="absolute bottom-1 right-2 font-mono text-[7px] text-muted-foreground/30 tracking-widest uppercase">
+              <span className="absolute bottom-1.5 right-2.5 font-mono text-[7px] text-muted-foreground/30 tracking-widest uppercase">
                 Live EMG Scope
               </span>
             </div>
-
+ 
             {/* Stats list footer */}
-            <div className="grid grid-cols-4 gap-1.5 text-center font-mono mt-1">
-              <div className="bg-muted/50 border border-border/40 p-1.5 rounded-sm">
+            <div className="grid grid-cols-4 gap-2 text-center font-mono mt-1">
+              <div className="bg-muted/30 border border-border/60 p-2 rounded-md">
                 <span className="block text-[15px] font-bold text-foreground/90">
                   {Math.round(gameRef.current.currentPeakEMG)} mV
                 </span>
@@ -2638,9 +2711,9 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
       {/* 5. PROTOCOL RESULTS SUMMARY BOARD */}
       {phase === "results" && (
-        <div className="flex-1 p-3 overflow-auto">
-          <div className="panel p-4 flex flex-col gap-4 max-w-3xl mx-auto border-primary">
-            <header className="border-b border-border pb-2.5">
+        <div className="flex-1 p-4 overflow-auto bg-background/90">
+          <div className="panel-glass p-6 flex flex-col gap-5 max-w-3xl mx-auto border-primary/40 shadow-2xl">
+            <header className="border-b border-border pb-3">
               <h2 className="text-glow-green text-primary font-bold text-sm uppercase tracking-widest">
                 🎮 Game Session Complete!
               </h2>
@@ -2648,9 +2721,9 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 Session Finished · {participant}_trial{trialNo}_{exercise}
               </span>
             </header>
-
+ 
             {/* BIG SCORE CARD */}
-            <div className="bg-gradient-to-br from-primary/20 to-primary/5 border-2 border-primary rounded-md p-6 text-center">
+            <div className="bg-gradient-to-br from-primary/15 via-[#00c9aa]/5 to-primary/5 border border-primary/50 shadow-[inset_0_0_12px_rgba(0,229,170,0.05)] rounded-lg p-7 text-center">
               <div className="space-y-2">
                 <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
                   Your Final Score
@@ -2668,10 +2741,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 </div>
               </div>
             </div>
-
+ 
             {/* Quick stats cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
-              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center font-mono">
+              <div className="border border-border/70 bg-muted/30 rounded-md p-3.5 shadow-sm hover:border-primary/30 transition-all">
                 <span className="block text-2xl font-bold text-primary text-glow-green">
                   {gameRef.current.currentHurdle}
                 </span>
@@ -2679,7 +2752,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Completed
                 </span>
               </div>
-              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+              <div className="border border-border/70 bg-muted/30 rounded-md p-3.5 shadow-sm hover:border-primary/30 transition-all">
                 <span className="block text-2xl font-bold text-foreground/90">
                   {numHurdles}
                 </span>
@@ -2687,7 +2760,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Total Hurdles
                 </span>
               </div>
-              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+              <div className="border border-border/70 bg-muted/30 rounded-md p-3.5 shadow-sm hover:border-primary/30 transition-all">
                 <span className="block text-2xl font-bold text-foreground/90">
                   {gameRef.current.hurdleLog.reduce((s, h) => s + (h ? h.attempts.length : 0), 0)}
                 </span>
@@ -2695,7 +2768,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Total Attempts
                 </span>
               </div>
-              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+              <div className="border border-border/70 bg-muted/30 rounded-md p-3.5 shadow-sm hover:border-primary/30 transition-all">
                 <span className="block text-2xl font-bold text-[var(--neon-cyan)] text-glow-cyan">
                   {(((gameRef.current.sessionEndTime || Date.now()) - gameRef.current.sessionStartTime) / 1000).toFixed(1)}s
                 </span>
@@ -2703,7 +2776,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Session Duration
                 </span>
               </div>
-              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+              <div className="border border-border/70 bg-muted/30 rounded-md p-3.5 shadow-sm hover:border-primary/30 transition-all">
                 <span className="block text-2xl font-bold text-orange-400 text-glow-amber">
                   {(
                     (numHurdles /
@@ -2723,9 +2796,9 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 </span>
               </div>
             </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono mt-[-8px]">
-              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+ 
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center font-mono mt-[-8px]">
+              <div className="border border-border/70 bg-muted/30 rounded-md p-3.5 shadow-sm hover:border-primary/30 transition-all">
                 <span className="block text-2xl font-bold text-foreground/90">
                   {Math.round(
                     gameRef.current.hurdleLog.reduce((s, h) => {
@@ -2740,22 +2813,22 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   Avg Peak EMG
                 </span>
               </div>
-              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
-                <span className="block text-2xl font-bold text-primary">
+              <div className="border border-border/70 bg-muted/30 rounded-md p-3.5 shadow-sm hover:border-primary/30 transition-all">
+                <span className="block text-2xl font-bold text-primary text-glow-green">
                   {Math.round(threshold)} mV
                 </span>
                 <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
                   Target Limit
                 </span>
               </div>
-              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
+              <div className="border border-border/70 bg-muted/30 rounded-md p-3.5 shadow-sm hover:border-primary/30 transition-all">
                 <span className="block text-2xl font-bold text-foreground/80">{participant}</span>
                 <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
                   Participant
                 </span>
               </div>
-              <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
-                <span className="block text-2xl font-bold text-foreground/80">
+              <div className="border border-border/70 bg-muted/30 rounded-md p-3.5 shadow-sm hover:border-primary/30 transition-all animate-pulse">
+                <span className="block text-2xl font-bold text-foreground/80 truncate">
                   {exercise.replace("_", " ")}
                 </span>
                 <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
@@ -2763,19 +2836,19 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 </span>
               </div>
             </div>
-
+ 
             {/* Hurdle alignment log table */}
-            <div className="overflow-x-auto border border-border/60 rounded-sm">
-              <table className="w-full font-mono text-[11px] tabular-nums text-left border-collapse">
-                <thead className="bg-muted/80 text-[8px] tracking-widest text-muted-foreground uppercase border-b border-border">
+            <div className="overflow-x-auto border border-border/70 rounded-md shadow-sm">
+              <table className="w-full font-mono text-[11px] tabular-nums text-left border-collapse bg-muted/10">
+                <thead className="bg-muted/80 text-[8px] tracking-widest text-muted-foreground uppercase border-b border-border/80">
                   <tr>
-                    <th className="p-2">Hurdle #</th>
-                    <th className="p-2 text-right">Attempts</th>
-                    <th className="p-2 text-right">Completed</th>
-                    <th className="p-2 text-right">Peak EMG</th>
-                    <th className="p-2 text-right">Target</th>
-                    <th className="p-2 text-right">Latency (ms)</th>
-                    <th className="p-2 text-right">Status</th>
+                    <th className="p-3">Hurdle #</th>
+                    <th className="p-3 text-right">Attempts</th>
+                    <th className="p-3 text-right">Completed</th>
+                    <th className="p-3 text-right">Peak EMG</th>
+                    <th className="p-3 text-right">Target</th>
+                    <th className="p-3 text-right">Latency (ms)</th>
+                    <th className="p-3 text-right">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2787,23 +2860,23 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       : "—";
                     const count = h.attempts.length;
                     return (
-                      <tr key={i} className="border-b border-border/40 hover:bg-slate-800/20">
-                        <td className="p-2 font-bold text-foreground/80">Hurdle {i + 1}</td>
-                        <td className="p-2 text-right">{count}</td>
-                        <td className="p-2 text-right text-muted-foreground">{clearedTime}</td>
-                        <td className="p-2 text-right text-primary">
+                      <tr key={i} className="border-b border-border/40 hover:bg-muted/30 transition-colors">
+                        <td className="p-3 font-bold text-foreground/80">Hurdle {i + 1}</td>
+                        <td className="p-3 text-right">{count}</td>
+                        <td className="p-3 text-right text-muted-foreground">{clearedTime}</td>
+                        <td className="p-3 text-right text-primary text-glow-green font-bold">
                           {success ? `${Math.round(success.peakEMG_mV)} mV` : "—"}
                         </td>
-                        <td className="p-2 text-right text-muted-foreground">
+                        <td className="p-3 text-right text-muted-foreground">
                           {Math.round(threshold)} mV
                         </td>
-                        <td className="p-2 text-right text-[var(--neon-cyan)]">
+                        <td className="p-3 text-right text-[var(--neon-cyan)] text-glow-cyan">
                           {success && success.timeToThreshold_ms != null
                             ? Math.round(success.timeToThreshold_ms)
                             : "—"}
                         </td>
                         <td
-                          className={`p-2 text-right font-bold ${count === 1 ? "text-emerald-400" : count > 3 ? "text-orange-400" : "text-amber-300"}`}
+                          className={`p-3 text-right font-bold ${count === 1 ? "text-emerald-400" : count > 3 ? "text-orange-400" : "text-amber-300"}`}
                         >
                           {count === 1 ? "✓ 1st Try" : `${count} tries`}
                         </td>
@@ -2815,47 +2888,47 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
             </div>
 
             {/* Actions grid layout */}
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-border mt-1">
+            <div className="flex flex-wrap gap-2 pt-3 border-t border-border mt-1">
               <Button
                 onClick={handleExportJSON}
-                className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
+                className="flex-1 uppercase font-bold tracking-wider text-[10px] h-10 border border-border/80 hover:bg-muted/40 transition-all rounded-md cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
               >
                 <Download className="size-3 mr-1" /> Session JSON
               </Button>
               <Button
                 onClick={handleExportAttemptsCSV}
-                className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
+                className="flex-1 uppercase font-bold tracking-wider text-[10px] h-10 border border-border/80 hover:bg-muted/40 transition-all rounded-md cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
               >
                 <Download className="size-3 mr-1" /> Attempts CSV
               </Button>
-
+ 
               {connected && (
                 <>
                   <Button
                     onClick={() => handleExportEMGCSV(true)}
-                    className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
+                    className="flex-1 uppercase font-bold tracking-wider text-[10px] h-10 border border-border/80 hover:bg-muted/40 transition-all rounded-md cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
                   >
                     <Download className="size-3 mr-1" /> EMG Filtered
                   </Button>
                   <Button
                     onClick={() => handleExportEMGCSV(false)}
-                    className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
+                    className="flex-1 uppercase font-bold tracking-wider text-[10px] h-10 border border-border/80 hover:bg-muted/40 transition-all rounded-md cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
                   >
                     <Download className="size-3 mr-1" /> EMG Raw
                   </Button>
                   <Button
                     onClick={() => setShowAlignModal(true)}
-                    className="uppercase font-bold tracking-wider text-[10px] size-8 border border-border/80 text-[var(--neon-cyan)]"
+                    className="uppercase font-bold tracking-wider text-[10px] h-10 border border-border/80 text-[var(--neon-cyan)] text-glow-cyan hover:bg-muted/40 transition-all rounded-md cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
                   >
                     📊 Alignment %
                   </Button>
                 </>
               )}
-
+ 
               <Button
                 onClick={handleResetToSetup}
                 variant="secondary"
-                className="w-full uppercase font-bold tracking-wider text-[10px] size-8 border border-border mt-1"
+                className="w-full uppercase font-bold tracking-wider text-[10px] h-10 border border-border/80 hover:bg-muted/40 transition-all rounded-md mt-2 cursor-pointer hover:scale-[1.005] active:scale-[0.995]"
               >
                 Start New Game Session
               </Button>
@@ -2863,21 +2936,21 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
           </div>
         </div>
       )}
-
+ 
       {/* --- Alignment Details Modal Overlay --- */}
       {showAlignModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="panel max-w-sm w-full p-5 bg-card text-foreground border-border relative flex flex-col gap-4 font-mono text-xs">
+          <div className="panel-glass max-w-sm w-full p-6 text-foreground border-border/60 relative flex flex-col gap-4 font-mono text-xs shadow-2xl">
             <header className="flex justify-between items-center border-b border-border/60 pb-2">
               <h3 className="font-bold text-sm text-foreground">📊 Multi-Channel Data Alignment</h3>
               <button
                 onClick={() => setShowAlignModal(false)}
-                className="text-muted-foreground hover:text-foreground text-lg font-bold leading-none cursor-pointer"
+                className="text-muted-foreground hover:text-foreground text-lg font-bold leading-none cursor-pointer bg-transparent border-0 outline-none"
               >
                 &times;
               </button>
             </header>
-
+ 
             {(() => {
               const alignedStats = getAlignmentStats();
               if (!alignedStats) {
@@ -2887,7 +2960,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   </div>
                 );
               }
-
+ 
               const verdict =
                 alignedStats.alignedPct >= 95
                   ? "Excellent Sync (Stable)"
@@ -2896,13 +2969,13 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                     : "Poor / Bad Sync";
               const valColor =
                 alignedStats.alignedPct >= 95
-                  ? "text-emerald-400"
+                  ? "text-emerald-400 text-glow-green"
                   : alignedStats.alignedPct >= 80
-                    ? "text-amber-400"
-                    : "text-destructive";
-
+                    ? "text-amber-400 text-glow-amber"
+                    : "text-destructive text-glow-magenta";
+ 
               const channelColors = ["#00e5c8", "#ffb300", "#9d4edd", "#ff357a"];
-
+ 
               return (
                 <>
                   <div className="text-center space-y-1 py-2">
@@ -2916,8 +2989,8 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       of session frames are fully time-synchronized
                     </div>
                   </div>
-
-                  <div className="bg-muted/60 border border-border/40 rounded-sm p-2.5 text-[10px] space-y-1.5 leading-relaxed text-foreground/80">
+ 
+                  <div className="bg-muted/30 border border-border/40 rounded-md p-3 text-[10px] space-y-1.5 leading-relaxed text-foreground/80 font-mono">
                     <div className="flex justify-between">
                       <span>Active Channels:</span>
                       <strong className="text-foreground">
@@ -2943,8 +3016,8 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                       </strong>
                     </div>
                   </div>
-
-                  <div className="space-y-2 mt-1">
+ 
+                  <div className="space-y-2.5 mt-1">
                     <div className="font-bold text-[10px] uppercase text-foreground/80">
                       Channel Coverage Details:
                     </div>
@@ -2973,10 +3046,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 </>
               );
             })()}
-
+ 
             <Button
               onClick={() => setShowAlignModal(false)}
-              className="uppercase font-bold tracking-wider text-[10px] size-8 border border-border mt-2"
+              className="uppercase font-bold tracking-wider text-[10px] h-10 border border-border/80 hover:bg-muted/40 transition-colors rounded-md mt-2 cursor-pointer"
             >
               Close
             </Button>

@@ -168,6 +168,33 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
   }
+  .panel-glass {
+    background: color-mix(in oklab, var(--color-card) 68%, transparent);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .panel-glass:hover {
+    border-color: color-mix(in oklab, var(--color-primary) 40%, var(--color-border));
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), 0 0 15px -3px var(--neon-cyan) / 10%;
+  }
+  .glow-cyan {
+    box-shadow: 0 0 12px var(--neon-cyan) / 35%;
+  }
+  .glow-btn {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+  .glow-btn:hover {
+    box-shadow: 0 0 15px var(--neon-green) / 45%;
+    transform: translateY(-1px);
+  }
+  .glow-btn:active {
+    transform: translateY(1px);
+  }
   .panel-header {
     display: flex;
     align-items: center;
