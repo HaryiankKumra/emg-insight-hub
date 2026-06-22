@@ -237,6 +237,9 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
   // Alignment Stats Modal
   const [showAlignModal, setShowAlignModal] = useState(false);
 
+  // Store last recorded EMG dataset from game session
+  const [lastGameEMGDataset, setLastGameEMGDataset] = useState<EmgDataset | null>(null);
+
   // Canvas Refs
   const gameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const anatomyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -340,6 +343,15 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
   // Sync phase changes back to UI React state (for overlay conditions)
   const changePhase = (newPhase: typeof phase) => {
     gameRef.current.phase = newPhase;
+    
+    // When game ends, capture the EMG dataset before stopping recording
+    if (newPhase === "results" && gameRef.current.phase !== "results") {
+      const recordedDataset = serialManager.stopRecording(true); // Get filtered copy
+      if (recordedDataset && recordedDataset.samples.length > 0) {
+        setLastGameEMGDataset(recordedDataset);
+      }
+    }
+    
     setPhase(newPhase);
   };
 
@@ -1934,10 +1946,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
   };
 
   const handleExportEMGCSV = () => {
-    // Generate CSV from live recorded samples stored in serialManager
-    const rawDataset = serialManager.stopRecording(false);
+    // Use the dataset saved when game ended
+    const rawDataset = lastGameEMGDataset;
     if (!rawDataset || !rawDataset.samples.length) {
-      alert("No physical EMG serial samples were recorded in this trial.");
+      alert("No EMG data was recorded during this game session. Ensure the device was connected and data was streaming.");
       return;
     }
     
