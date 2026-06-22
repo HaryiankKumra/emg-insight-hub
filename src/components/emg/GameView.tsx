@@ -1633,6 +1633,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     gameRef.current.particles = [];
     gameRef.current.hurdleLog = [];
     gameRef.current.sessionStartTime = Date.now();
+    gameRef.current.sessionEndTime = 0;
     gameRef.current.sessionTimeLimit = sessionTimeLimit;
     gameRef.current.sessionElapsedTime = 0;
     gameRef.current.scrollOffset = 0; // Reset scroll for new game
