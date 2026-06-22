@@ -176,8 +176,16 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
             "X-goog-api-key": geminiKey,
           },
           body: JSON.stringify({
+            system_instruction: {
+              parts: [
+                {
+                  text: "You are a precise biomedical signal-processing assistant.",
+                },
+              ],
+            },
             contents: [
               {
+                role: "user",
                 parts: [
                   {
                     text: prompt,
@@ -188,7 +196,6 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
             generationConfig: {
               maxOutputTokens: 800,
             },
-            systemInstruction: "You are a precise biomedical signal-processing assistant.",
           }),
         },
       );
