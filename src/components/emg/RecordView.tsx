@@ -14,6 +14,7 @@ const CH_COLORS = {
 
 export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => void }) {
   const { addDataset, dspEnabled, setDspEnabled, theme } = useEmgStore();
+  const isDark = theme === "dark";
   const [connected, setConnected] = useState(false);
   const [stats, setStats] = useState(serialManager.stats);
   const [isRecording, setIsRecording] = useState(false);
@@ -428,7 +429,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
           <div className="lg:col-span-4 grid grid-cols-2 gap-2 items-end">
             <div className="space-y-1">
               <label className="text-[9px] uppercase tracking-widest text-muted-foreground">Baud Rate</label>
-              <select className="w-full bg-[#090d16] border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50">
+              <select className={`w-full border border-border rounded-sm p-2 text-xs text-foreground focus:border-primary/50 ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`}>
                 <option value="9600">9600</option>
                 <option value="115200">115200</option>
                 <option value="921600">921600</option>
@@ -468,7 +469,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
                 type="text" 
                 value={meta.participant} 
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, participant: e.target.value }; saveMetaCache(n); return n; }); }}
-                className="w-full bg-[#090d16] border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 text-center"
+                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 text-center ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`}
               />
             </div>
             <div className="space-y-1 sm:col-span-1">
@@ -476,7 +477,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
               <select 
                 value={meta.sex} 
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, sex: e.target.value }; saveMetaCache(n); return n; }); }}
-                className="w-full bg-[#090d16] border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50"
+                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`}
               >
                 <option value="male">Male</option>
                 <option value="female">Female</option>
@@ -488,7 +489,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
                 type="number" 
                 value={meta.age} 
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, age: parseInt(e.target.value) || 0 }; saveMetaCache(n); return n; }); }}
-                className="w-full bg-[#090d16] border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 text-center"
+                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 text-center ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`}
               />
             </div>
             <div className="space-y-1 sm:col-span-1">
@@ -497,7 +498,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
                 type="number" 
                 value={meta.weight_kg} 
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, weight_kg: parseFloat(e.target.value) || 0 }; saveMetaCache(n); return n; }); }}
-                className="w-full bg-[#090d16] border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 text-center"
+                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 text-center ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`}
               />
             </div>
             <div className="space-y-1 sm:col-span-1">
@@ -506,7 +507,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
                 type="number" 
                 value={meta.height_cm} 
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, height_cm: parseFloat(e.target.value) || 0 }; saveMetaCache(n); return n; }); }}
-                className="w-full bg-[#090d16] border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 text-center"
+                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 text-center ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`}
               />
             </div>
             <div className="space-y-1 sm:col-span-1">
@@ -514,7 +515,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
               <select 
                 value={meta.exercise} 
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, exercise: e.target.value }; saveMetaCache(n); return n; }); }}
-                className="w-full bg-[#090d16] border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50"
+                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`
               >
                 <option value="walking">Walking</option>
                 <option value="stair_ascent">Stair Ascent</option>
@@ -532,7 +533,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
               <select 
                 value={meta.trial_no} 
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, trial_no: parseInt(e.target.value) || 1 }; saveMetaCache(n); return n; }); }}
-                className="w-full bg-[#090d16] border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50"
+                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`
               >
                 {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
               </select>
