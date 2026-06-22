@@ -458,6 +458,12 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         }
       }
 
+      // Continuous background scroll towards the dino during active gameplay
+      const gameplayPhases = ["ready", "approaching", "at_hurdle", "jumping", "hit", "resting"];
+      if (gameplayPhases.includes(gameRef.current.phase)) {
+        gameRef.current.scrollOffset += gameRef.current.scrollSpeed * dt;
+      }
+
       // Update Phase Logic
       const phase = gameRef.current.phase;
       if (phase === "setup") {
