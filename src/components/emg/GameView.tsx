@@ -739,6 +739,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     };
 
     const completeSession = () => {
+      gameRef.current.sessionEndTime = Date.now();
       changePhase("results");
       setShowStopButton(false);
 
