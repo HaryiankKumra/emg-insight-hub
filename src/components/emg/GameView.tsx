@@ -2527,7 +2527,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   HURDLE {currentHurdle + 1} / {numHurdles}
                 </h3>
                 <div className="font-mono text-[9px] text-muted-foreground mt-1">
-                  Time: {Math.max(0, sessionTimeRemaining).toFixed(1)}s / {sessionTimeLimit * 60}s
+                  Elapsed: {Math.max(0, sessionTimeLimit * 60 - sessionTimeRemaining).toFixed(1)}s / {sessionTimeLimit * 60}s
                 </div>
               </div>
 
@@ -2539,49 +2539,6 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 {/* Large countdown timer display */}
                 <div className="font-mono font-bold text-2xl text-primary text-glow-green ml-auto">
                   {countdownDisplay}s
-                </div>
-
-                {/* Micro SVG ring timer */}
-                <div className="relative size-7 flex items-center justify-center">
-                  <svg className="size-full" viewBox="0 0 32 32">
-                    <circle
-                      cx="16"
-                      cy="16"
-                      r="13"
-                      fill="none"
-                      stroke="rgba(255,255,255,0.06)"
-                      strokeWidth="3"
-                    />
-                    <circle
-                      cx="16"
-                      cy="16"
-                      r="13"
-                      fill="none"
-                      stroke="#00e5c8"
-                      strokeWidth="3"
-                      strokeDasharray="81.6"
-                      // Countdown mapping
-                      strokeDashoffset={
-                        81.6 *
-                        (1.0 -
-                          Math.min(
-                            1.0,
-                            (attemptTimeLimit -
-                              (Date.now() - gameRef.current.currentAttemptStart) / 1000) /
-                              attemptTimeLimit,
-                          ))
-                      }
-                      strokeLinecap="round"
-                      transform="rotate(-90 16 16)"
-                      className="transition-all duration-100"
-                    />
-                  </svg>
-                  <span className="absolute font-mono text-[8px] font-bold text-primary">
-                    {Math.max(
-                      0,
-                      attemptTimeLimit - (Date.now() - gameRef.current.currentAttemptStart) / 1000,
-                    ).toFixed(1)}
-                  </span>
                 </div>
               </div>
             </div>
