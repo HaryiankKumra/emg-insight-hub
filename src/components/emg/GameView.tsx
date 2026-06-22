@@ -2740,7 +2740,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
               </div>
               <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
                 <span className="block text-2xl font-bold text-[var(--neon-cyan)] text-glow-cyan">
-                  {((Date.now() - gameRef.current.sessionStartTime) / 1000).toFixed(1)}s
+                  {(((gameRef.current.sessionEndTime || Date.now()) - gameRef.current.sessionStartTime) / 1000).toFixed(1)}s
                 </span>
                 <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
                   Session Duration
