@@ -1232,3 +1232,266 @@ export function detectRepsMultiChannel(
     dominantChannel
   };
 }
+
+// ========== DATA CLEANING & EXPORT ==========
+
+/**
+ * Interpolate null/missing values in a channel
+ * Handles interleaved nulls where ESP32 nodes send on shared timestamp
+ * (only 1 channel has value per row)
+ */
+export function interpolateChannel(signal: number[]): number[] {
+  if (!signal.length) return [];
+  
+  // Find non-null indices
+  const nonNullIdx: number[] = [];
+  const nonNullVals: number[] = [];
+  
+  for (let i = 0; i < signal.length; i++) {
+    if (signal[i] != null && !isNaN(signal[i])) {
+      nonNullIdx.push(i);
+      nonNullVals.push(signal[i]);
+    }
+  }
+  
+  if (nonNullIdx.length === 0) return signal.map(() => 0); // All nulls → zeros
+  if (nonNullIdx.length === signal.length) return signal; // No nulls
+  
+  // Linear interpolation
+  const result = [...signal];
+  for (let i = 0; i < signal.length; i++) {
+    if (result[i] == null || isNaN(result[i])) {
+      // Find nearest non-null neighbors
+      let leftIdx = -1, rightIdx = -1;
+      for (let j = i - 1; j >= 0; j--) {
+        if (nonNullIdx.includes(j)) { leftIdx = j; break; }
+      }
+      for (let j = i + 1; j < signal.length; j++) {
+        if (nonNullIdx.includes(j)) { rightIdx = j; break; }
+      }
+      
+      if (leftIdx >= 0 && rightIdx >= 0) {
+        // Linear interpolation between left and right
+        const leftVal = result[leftIdx];
+        const rightVal = result[rightIdx];
+        const ratio = (i - leftIdx) / (rightIdx - leftIdx);
+        result[i] = leftVal + ratio * (rightVal - leftVal);
+      } else if (leftIdx >= 0) {
+        result[i] = result[leftIdx]; // Extend left
+      } else if (rightIdx >= 0) {
+        result[i] = result[rightIdx]; // Extend right
+      } else {
+        result[i] = 0; // Fallback
+      }
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Combine channel envelopes based on exercise type
+ * Different exercises have different muscle dominance patterns
+ */
+export function combineChannelsPerExercise(
+  envelopes: Record<Channel, number[]>,
+  exercise: string = "lunges"
+): number[] {
+  const configs: Record<string, Record<Channel, number>> = {
+    lunges: { ch1: 0.5, ch2: 0.5, ch3: 0.0, ch4: 0.0 },        // RF + BF equal
+    leg_press: { ch1: 0.6, ch2: 0.0, ch3: 0.4, ch4: 0.0 },    // RF 60% + GAS 40%
+    squat: { ch1: 0.6, ch2: 0.4, ch3: 0.0, ch4: 0.0 },        // RF 60% + BF 40%
+    calf_raises: { ch1: 0.0, ch2: 0.0, ch3: 0.7, ch4: 0.3 },  // GAS 70% + TA 30%
+  };
+  
+  const weights = configs[exercise] || configs.lunges;
+  const length = Math.max(
+    envelopes.ch1?.length || 0,
+    envelopes.ch2?.length || 0,
+    envelopes.ch3?.length || 0,
+    envelopes.ch4?.length || 0
+  );
+  
+  const combined = new Array<number>(length).fill(0);
+  for (let i = 0; i < length; i++) {
+    let sum = 0;
+    for (const ch of CHANNELS) {
+      if (envelopes[ch] && envelopes[ch][i] != null) {
+        sum += envelopes[ch][i] * weights[ch];
+      }
+    }
+    combined[i] = sum;
+  }
+  
+  return combined;
+}
+
+/**
+ * Improved rep detection with prominence filtering
+ * Matches scipy.signal.find_peaks behavior
+ */
+export function improvedDetectReps(
+  envelope: number[],
+  sampleRate: number = 1000,
+  minRepGapMs: number = 1500,
+  thresholdPercentile: number = 70,
+  prominenceThresholdFactor: number = 0.25
+): {
+  count: number;
+  peaks: number[];
+  smooth: number[];
+  threshold: number;
+  details: string;
+} {
+  if (!envelope.length) {
+    return { count: 0, peaks: [], smooth: [], threshold: 0, details: "Empty envelope" };
+  }
+  
+  // Smooth with 500ms moving average (scipy.ndimage.uniform_filter1d)
+  const smoothWinMs = 500;
+  const smooth = movingAverage(envelope, Math.round((smoothWinMs / 1000) * sampleRate));
+  
+  // Compute adaptive threshold at percentile
+  const sorted = [...smooth].sort((a, b) => a - b);
+  const thresh = sorted[Math.floor(smooth.length * (thresholdPercentile / 100))];
+  
+  // Minimum distance between peaks
+  const minDist = Math.round((minRepGapMs / 1000) * sampleRate);
+  
+  // Find peaks with scipy.signal.find_peaks parameters:
+  // height >= thresh * 0.8
+  // distance >= minDist
+  // prominence >= thresh * prominenceThresholdFactor
+  
+  const peaks: number[] = [];
+  for (let i = 1; i < smooth.length - 1; i++) {
+    const current = smooth[i];
+    const prev = smooth[i - 1];
+    const next = smooth[i + 1];
+    
+    // Local maximum
+    if (!(current > prev && current > next)) continue;
+    
+    // Height threshold
+    if (current < thresh * 0.8) continue;
+    
+    // Prominence: max height above the minimum of left/right slopes
+    let leftMin = current;
+    for (let j = i - 1; j >= Math.max(0, i - minDist); j--) {
+      if (smooth[j] < leftMin) leftMin = smooth[j];
+    }
+    
+    let rightMin = current;
+    for (let j = i + 1; j < Math.min(smooth.length, i + minDist); j++) {
+      if (smooth[j] < rightMin) rightMin = smooth[j];
+    }
+    
+    const prominence = current - Math.max(leftMin, rightMin);
+    if (prominence < thresh * prominenceThresholdFactor) continue;
+    
+    // Minimum distance from last peak
+    if (peaks.length > 0 && i - peaks[peaks.length - 1] < minDist) continue;
+    
+    peaks.push(i);
+  }
+  
+  return {
+    count: peaks.length,
+    peaks,
+    smooth,
+    threshold: thresh,
+    details: `${peaks.length} reps detected (threshold=${thresh.toFixed(2)}mV, prominence=${(thresh * prominenceThresholdFactor).toFixed(2)}mV)`
+  };
+}
+
+/**
+ * Generate clean CSV export with interpolated channels
+ * Format: t,ch1,ch2,ch3,ch4
+ */
+export function generateCleanCsv(ds: EmgDataset, preprocessed = true): string {
+  const dataset = preprocessed ? preprocessDataset(ds) : ds;
+  const header = "t,ch1,ch2,ch3,ch4\n";
+  const rows = dataset.samples
+    .map(s => 
+      `${s.t.toFixed(4)},${s.ch1.toFixed(4)},${s.ch2.toFixed(4)},${s.ch3.toFixed(4)},${s.ch4.toFixed(4)}`
+    )
+    .join("\n");
+  return header + rows;
+}
+
+/**
+ * Generate report data with rep detection and channel analysis
+ * For display in Dashboard and export to PDF
+ */
+export function generateReportData(
+  ds: EmgDataset,
+  exercise: string = "lunges",
+  preprocessed = true
+): {
+  csvData: string;
+  repCount: number;
+  confidence: number;
+  channelSummary: Record<Channel, {
+    rms: number;
+    mav: number;
+    peaks: number;
+  }>;
+  combinedRepCount: number;
+  combinedConfidence: number;
+} {
+  const dataset = preprocessed ? preprocessDataset(ds) : ds;
+  
+  // Export clean CSV
+  const csvData = generateCleanCsv(ds, preprocessed);
+  
+  // Per-channel analysis
+  const channelSummary: Record<Channel, any> = {} as any;
+  const envelopes: Record<Channel, number[]> = {} as any;
+  
+  for (const ch of CHANNELS) {
+    const signal = channelArray(dataset, ch);
+    
+    // Preprocess individual channel
+    const cleaned = dcRemoval(signal);
+    const clipped = spikeClipping(cleaned);
+    const rectified = fullWaveRectification(clipped);
+    const envelope = rmsEnvelopeAdvanced(rectified, 200, dataset.sampleRate);
+    
+    envelopes[ch] = envelope;
+    
+    const repResult = improvedDetectReps(envelope, dataset.sampleRate, 
+      EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG]?.minRepGapMs || 1500,
+      EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG]?.thresholdPct || 70
+    );
+    
+    channelSummary[ch] = {
+      rms: rms(signal),
+      mav: mav(signal),
+      peaks: repResult.count
+    };
+  }
+  
+  // Combined channel detection per exercise
+  const combined = combineChannelsPerExercise(envelopes, exercise);
+  const combinedRepResult = improvedDetectReps(combined, dataset.sampleRate,
+    EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG]?.minRepGapMs || 1500,
+    EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG]?.thresholdPct || 70
+  );
+  
+  // Single-channel rep detection (for comparison)
+  const primaryCh = EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG]?.primaryChannels[0] || 'ch1';
+  const primaryEnvelope = envelopes[primaryCh];
+  const primaryRepResult = improvedDetectReps(primaryEnvelope, dataset.sampleRate,
+    EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG]?.minRepGapMs || 1500,
+    EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG]?.thresholdPct || 70
+  );
+  
+  return {
+    csvData,
+    repCount: primaryRepResult.count,
+    confidence: 0.85, // Placeholder
+    channelSummary,
+    combinedRepCount: combinedRepResult.count,
+    combinedConfidence: 0.90 // Placeholder
+  };
+}

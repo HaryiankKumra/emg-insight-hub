@@ -50,6 +50,9 @@ import {
   spectralMetrics,
   variance,
   zeroCrossings,
+  generateCleanCsv,
+  generateReportData,
+  improvedDetectReps,
   type Channel,
   type EmgDataset,
   type EmgSample,
@@ -1301,6 +1304,19 @@ function ReportView() {
     URL.revokeObjectURL(url);
   }
 
+  function exportCleanCsv() {
+    // Export preprocessed data with all channels (interpolated + filtered)
+    const csvData = generateCleanCsv(ds, true);
+    const blob = new Blob([csvData], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `emg-clean-${ds.id}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    alert("✓ Clean CSV exported successfully!");
+  }
+
   return (
     <div className="grid grid-cols-12 gap-3">
       <Panel
@@ -1308,8 +1324,11 @@ function ReportView() {
         className="col-span-12"
         right={
           <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={exportCleanCsv}>
+              <Download className="size-3.5 mr-1" /> Clean CSV
+            </Button>
             <Button size="sm" variant="secondary" onClick={exportCsv}>
-              <Download className="size-3.5 mr-1" /> CSV
+              <Download className="size-3.5 mr-1" /> Report CSV
             </Button>
             <Button size="sm" onClick={exportPdf}>
               <Download className="size-3.5 mr-1" /> PDF
