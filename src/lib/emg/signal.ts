@@ -88,108 +88,43 @@ export function snr(a: number[]): number {
 export function detectActivationWindows(
   signal: number[],
   sampleRate: number,
-  rmsWindowMs: number = 50, // RMS averaging window (50ms)
-  activationThresholdPercentile: number = 35, // Activations above 35th percentile RMS
-  minWindowDurationMs: number = 100, // Minimum rep duration (100ms)
-  minGapBetweenRepsMs: number = 300, // Minimum gap between reps to be separate (300ms)
+  rmsWindowMs: number = 150, // 150ms window matching the envelope smoothing
+  activationThresholdPercentile: number = 75, // 75th percentile adaptive threshold
+  minWindowDurationMs: number = 150, // 150ms minimum duration
+  minGapBetweenRepsMs: number = 500, // 500ms minimum gap
 ): {
   windows: Array<{ startIdx: number; endIdx: number; peakRms: number; duration: number }>;
   threshold: number;
   details: string;
 } {
-  // Step 1: Compute RMS envelope
-  const rmsWindowSamples = Math.max(1, Math.floor((rmsWindowMs / 1000) * sampleRate));
-  const rmsEnv: number[] = [];
+  const result = countRepsBurstDetection(
+    signal,
+    sampleRate,
+    rmsWindowMs,
+    activationThresholdPercentile,
+    minGapBetweenRepsMs,
+    minWindowDurationMs,
+    0, // Already trimmed
+    false // Is raw signal
+  );
 
-  for (let i = 0; i < signal.length; i++) {
-    let sumSq = 0;
-    let count = 0;
-    for (let j = Math.max(0, i - rmsWindowSamples); j <= Math.min(signal.length - 1, i + rmsWindowSamples); j++) {
-      sumSq += signal[j] * signal[j];
-      count++;
+  const windows = result.bursts.map(b => {
+    let maxRms = 0;
+    for (let i = b.startIdx; i < b.endIdx; i++) {
+      if (result.envelope[i] > maxRms) maxRms = result.envelope[i];
     }
-    rmsEnv.push(Math.sqrt(sumSq / count));
-  }
-
-  // Step 2: Find activation threshold using percentile
-  // 35th percentile balances weak muscles (quads) vs strong muscles (calves/arms)
-  const sorted = [...rmsEnv].sort((a, b) => a - b);
-  const threshold = sorted[Math.floor(sorted.length * 0.35)];
-
-  // Step 3: Detect windows (contiguous regions above threshold)
-  const minWindowSamples = Math.floor((minWindowDurationMs / 1000) * sampleRate);
-  const minGapSamples = Math.floor((minGapBetweenRepsMs / 1000) * sampleRate);
-
-  const windows: Array<{ startIdx: number; endIdx: number; peakRms: number; duration: number }> = [];
-  let inWindow = false;
-  let windowStart = 0;
-  let maxRmsInWindow = 0;
-
-  for (let i = 0; i < rmsEnv.length; i++) {
-    const isActive = rmsEnv[i] > threshold;
-
-    if (isActive && !inWindow) {
-      // Start new window
-      windowStart = i;
-      maxRmsInWindow = rmsEnv[i];
-      inWindow = true;
-    } else if (isActive && inWindow) {
-      // Continue window
-      maxRmsInWindow = Math.max(maxRmsInWindow, rmsEnv[i]);
-    } else if (!isActive && inWindow) {
-      // End window
-      const windowLength = i - windowStart;
-      if (windowLength >= minWindowSamples) {
-        // Merge with previous window if gap too small
-        if (
-          windows.length > 0 &&
-          windowStart - windows[windows.length - 1].endIdx < minGapSamples
-        ) {
-          // Merge: extend previous window
-          windows[windows.length - 1].endIdx = i;
-          windows[windows.length - 1].peakRms = Math.max(
-            windows[windows.length - 1].peakRms,
-            maxRmsInWindow,
-          );
-          windows[windows.length - 1].duration = windows[windows.length - 1].endIdx - windows[windows.length - 1].startIdx;
-        } else {
-          // Add new window
-          windows.push({
-            startIdx: windowStart,
-            endIdx: i,
-            peakRms: maxRmsInWindow,
-            duration: windowLength,
-          });
-        }
-      }
-      inWindow = false;
-      maxRmsInWindow = 0;
-    }
-  }
-
-  // Handle window at end of signal
-  if (inWindow && rmsEnv.length - windowStart >= minWindowSamples) {
-    if (
-      windows.length > 0 &&
-      windowStart - windows[windows.length - 1].endIdx < minGapSamples
-    ) {
-      windows[windows.length - 1].endIdx = rmsEnv.length;
-      windows[windows.length - 1].peakRms = Math.max(windows[windows.length - 1].peakRms, maxRmsInWindow);
-      windows[windows.length - 1].duration = windows[windows.length - 1].endIdx - windows[windows.length - 1].startIdx;
-    } else {
-      windows.push({
-        startIdx: windowStart,
-        endIdx: rmsEnv.length,
-        peakRms: maxRmsInWindow,
-        duration: rmsEnv.length - windowStart,
-      });
-    }
-  }
+    return {
+      startIdx: b.startIdx,
+      endIdx: b.endIdx,
+      peakRms: maxRms,
+      duration: b.duration
+    };
+  });
 
   return {
     windows,
-    threshold,
-    details: `${windows.length} activation windows detected (threshold: ${threshold.toFixed(3)})`,
+    threshold: result.threshold,
+    details: `${windows.length} activation windows detected (threshold: ${result.threshold.toFixed(3)})`,
   };
 }
 
@@ -344,7 +279,7 @@ export function snrFromBaseline(active: number[], baseline: number[]): number {
 export function calculateQualityFromRaw(
   rawDs: EmgDataset,
   channels: Channel[] = CHANNELS,
-  skipFirstSecs = 2,
+  skipFirstSecs = 2.5,
 ): Record<
   Channel,
   {
@@ -866,7 +801,7 @@ export function createNotch(f0: number, fs: number, q = 10): BiquadFilter {
 
 // Processes a complete dataset through the filter pipeline
 // Options: skipFirstSecs = skip first N seconds (default 2 for filter warm-up + startup transients)
-export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2): EmgDataset {
+export function preprocessDataset(ds: EmgDataset, skipFirstSecs = 2.5): EmgDataset {
   const fs = ds.sampleRate;
   const skipSamples = Math.floor(skipFirstSecs * fs);
 
@@ -1019,6 +954,108 @@ export function rmsEnvelopeAdvanced(signal: number[], windowMs: number = 200, sa
  * Prominence = height above background noise, prevents noise spikes from counting
  * Returns peak indices and metadata
  */
+/**
+ * Core rep counter based on the GymEMG-Net 12-step/11-step pipeline.
+ * Implements: demean + rectify + smooth + percentile threshold + burst detection + merge + min length filter.
+ */
+export function countRepsBurstDetection(
+  signalOrEnvelope: number[],
+  sampleRate: number = 1000,
+  smoothMs: number = 150,
+  thresholdPercentile: number = 75,
+  minGapMs: number = 500,
+  minBurstDurationMs: number = 150,
+  skipFirstSecs: number = 2.5,
+  isEnvelopeAlready: boolean = false
+): {
+  count: number;
+  bursts: Array<{ startIdx: number; endIdx: number; duration: number }>;
+  envelope: number[];
+  threshold: number;
+} {
+  let sig = [...signalOrEnvelope];
+
+  // 3. Trim Start
+  if (!isEnvelopeAlready && skipFirstSecs > 0) {
+    const trimSamples = Math.floor(skipFirstSecs * sampleRate);
+    sig = sig.slice(trimSamples);
+  }
+
+  if (sig.length === 0) {
+    return { count: 0, bursts: [], envelope: [], threshold: 0 };
+  }
+
+  let envelope: number[];
+
+  if (isEnvelopeAlready) {
+    envelope = sig;
+  } else {
+    // 5. Demean & 6. Rectify
+    const nonNanVal = sig.filter(v => v !== null && v !== undefined && !Number.isNaN(v));
+    if (nonNanVal.length === 0) {
+      return { count: 0, bursts: [], envelope: [], threshold: 0 };
+    }
+    const sorted = [...nonNanVal].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const rectified = sig.map(v => Math.abs(v - median));
+
+    // 7. Smooth (Envelope) via moving average (150ms window)
+    const w = Math.max(1, Math.floor((smoothMs / 1000) * sampleRate));
+    envelope = movingAverage(rectified, w);
+  }
+
+  // 8. Threshold (75th percentile of the envelope)
+  const nonNanEnv = envelope.filter(v => v !== null && v !== undefined && !Number.isNaN(v));
+  if (nonNanEnv.length === 0) {
+    return { count: 0, bursts: [], envelope: [], threshold: 0 };
+  }
+  const sortedEnv = [...nonNanEnv].sort((a, b) => a - b);
+  const threshold = sortedEnv[Math.floor(sortedEnv.length * (thresholdPercentile / 100))];
+
+  // 9. Burst Detection (envelope > threshold)
+  const active = envelope.map(v => v > threshold);
+  const minGap = Math.floor((minGapMs / 1000) * sampleRate);
+  const minLen = Math.floor((minBurstDurationMs / 1000) * sampleRate);
+
+  const rawBursts: Array<{ startIdx: number; endIdx: number; duration: number }> = [];
+  let inBurst = false;
+  let start = 0;
+
+  for (let i = 0; i < active.length; i++) {
+    if (active[i] && !inBurst) {
+      inBurst = true;
+      start = i;
+    } else if (!active[i] && inBurst) {
+      inBurst = false;
+      rawBursts.push({ startIdx: start, endIdx: i, duration: i - start });
+    }
+  }
+  if (inBurst) {
+    rawBursts.push({ startIdx: start, endIdx: active.length, duration: active.length - start });
+  }
+
+  // 10. Merge Gaps (< 500ms)
+  const mergedBursts: Array<{ startIdx: number; endIdx: number; duration: number }> = [];
+  for (const b of rawBursts) {
+    if (mergedBursts.length > 0 && (b.startIdx - mergedBursts[mergedBursts.length - 1].endIdx) < minGap) {
+      mergedBursts[mergedBursts.length - 1].endIdx = b.endIdx;
+      mergedBursts[mergedBursts.length - 1].duration = b.endIdx - mergedBursts[mergedBursts.length - 1].startIdx;
+    } else {
+      mergedBursts.push({ ...b });
+    }
+  }
+
+  // 11. Filter Short (< 150ms)
+  const filteredBursts = mergedBursts.filter(b => b.duration >= minLen);
+
+  return {
+    count: filteredBursts.length,
+    bursts: filteredBursts,
+    envelope,
+    threshold
+  };
+}
+
 export function detectReps(
   envelope: number[],
   sampleRate: number = 1000,
@@ -1031,57 +1068,23 @@ export function detectReps(
   threshold: number;
   prominenceThreshold?: number;
 } {
-  if (!envelope.length) return { count: 0, peaks: [], smooth: [], threshold: 0 };
-  
-  // 1. Smooth envelope with 500ms moving average
-  const smoothWinMs = 500;
-  const smooth = movingAverage(envelope, Math.round((smoothWinMs / 1000) * sampleRate));
-  
-  // 2. Compute threshold at percentile of smoothed signal
-  const sorted = [...smooth].sort((a, b) => a - b);
-  const thresh = sorted[Math.floor(smooth.length * (thresholdPercentile / 100))];
-  
-  // 3. Compute baseline (lower percentile) for prominence filtering
-  const baseline = sorted[Math.floor(smooth.length * 0.25)]; // 25th percentile
-  const prominenceThreshold = (thresh - baseline) * 0.5; // Prominence must be at least 50% of (70th-25th)
-  
-  // 4. Find peaks with minimum distance and prominence criteria
-  const minDist = Math.round((minRepGapMs / 1000) * sampleRate);
-  const peaks: number[] = [];
-  
-  for (let i = 1; i < smooth.length - 1; i++) {
-    const isLocalMax = smooth[i] > smooth[i - 1] && smooth[i] > smooth[i + 1];
-    const isAboveThreshold = smooth[i] >= thresh * 0.8;
-    
-    if (!isLocalMax || !isAboveThreshold) continue;
-    
-    // Prominence check: height above nearest valley
-    let leftValley = smooth[i];
-    for (let j = i - 1; j >= 0 && j >= i - Math.floor(minDist * 0.5); j--) {
-      if (smooth[j] < leftValley) leftValley = smooth[j];
-    }
-    
-    let rightValley = smooth[i];
-    for (let j = i + 1; j < smooth.length && j <= i + Math.floor(minDist * 0.5); j++) {
-      if (smooth[j] < rightValley) rightValley = smooth[j];
-    }
-    
-    const prominence = smooth[i] - Math.max(leftValley, rightValley);
-    
-    if (prominence < prominenceThreshold) continue; // Filter out noise
-    
-    // Check minimum distance from last peak
-    if (peaks.length === 0 || i - peaks[peaks.length - 1] >= minDist) {
-      peaks.push(i);
-    }
-  }
-  
+  const result = countRepsBurstDetection(
+    envelope,
+    sampleRate,
+    150,
+    thresholdPercentile,
+    minRepGapMs,
+    150,
+    0,
+    true
+  );
+
   return {
-    count: peaks.length,
-    peaks,
-    smooth,
-    threshold: thresh,
-    prominenceThreshold
+    count: result.count,
+    peaks: result.bursts.map(b => Math.round((b.startIdx + b.endIdx) / 2)),
+    smooth: result.envelope,
+    threshold: result.threshold,
+    prominenceThreshold: 0
   };
 }
 
@@ -1398,64 +1401,23 @@ export function improvedDetectReps(
   threshold: number;
   details: string;
 } {
-  if (!envelope.length) {
-    return { count: 0, peaks: [], smooth: [], threshold: 0, details: "Empty envelope" };
-  }
-  
-  // Smooth with 500ms moving average (scipy.ndimage.uniform_filter1d)
-  const smoothWinMs = 500;
-  const smooth = movingAverage(envelope, Math.round((smoothWinMs / 1000) * sampleRate));
-  
-  // Compute adaptive threshold at percentile
-  const sorted = [...smooth].sort((a, b) => a - b);
-  const thresh = sorted[Math.floor(smooth.length * (thresholdPercentile / 100))];
-  
-  // Minimum distance between peaks
-  const minDist = Math.round((minRepGapMs / 1000) * sampleRate);
-  
-  // Find peaks with scipy.signal.find_peaks parameters:
-  // height >= thresh * 0.8
-  // distance >= minDist
-  // prominence >= thresh * prominenceThresholdFactor
-  
-  const peaks: number[] = [];
-  for (let i = 1; i < smooth.length - 1; i++) {
-    const current = smooth[i];
-    const prev = smooth[i - 1];
-    const next = smooth[i + 1];
-    
-    // Local maximum
-    if (!(current > prev && current > next)) continue;
-    
-    // Height threshold
-    if (current < thresh * 0.8) continue;
-    
-    // Prominence: max height above the minimum of left/right slopes
-    let leftMin = current;
-    for (let j = i - 1; j >= Math.max(0, i - minDist); j--) {
-      if (smooth[j] < leftMin) leftMin = smooth[j];
-    }
-    
-    let rightMin = current;
-    for (let j = i + 1; j < Math.min(smooth.length, i + minDist); j++) {
-      if (smooth[j] < rightMin) rightMin = smooth[j];
-    }
-    
-    const prominence = current - Math.max(leftMin, rightMin);
-    if (prominence < thresh * prominenceThresholdFactor) continue;
-    
-    // Minimum distance from last peak
-    if (peaks.length > 0 && i - peaks[peaks.length - 1] < minDist) continue;
-    
-    peaks.push(i);
-  }
-  
+  const result = countRepsBurstDetection(
+    envelope,
+    sampleRate,
+    150, // smoothMs
+    thresholdPercentile,
+    minRepGapMs,
+    150, // minBurstDurationMs
+    0, // skipFirstSecs (already trimmed)
+    true // isEnvelopeAlready
+  );
+
   return {
-    count: peaks.length,
-    peaks,
-    smooth,
-    threshold: thresh,
-    details: `${peaks.length} reps detected (threshold=${thresh.toFixed(2)}mV, prominence=${(thresh * prominenceThresholdFactor).toFixed(2)}mV)`
+    count: result.count,
+    peaks: result.bursts.map(b => Math.round((b.startIdx + b.endIdx) / 2)),
+    smooth: result.envelope,
+    threshold: result.threshold,
+    details: `${result.count} reps detected (threshold=${result.threshold.toFixed(2)}mV, bursts merged and filtered)`
   };
 }
 
@@ -1540,11 +1502,42 @@ export function generateReportData(
     EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG]?.minRepGapMs || 1500,
     EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG]?.thresholdPct || 70
   );
-  
+
+  // Step 12: Pick Channel in range [4, 20] with the most reps in that range.
+  // Fallback is primaryRepResult.count if none fall in range [4, 20].
+  let consensusCount = primaryRepResult.count;
+  let bestCh: Channel = primaryCh;
+  let maxRepsInRange = -1;
+
+  for (const ch of CHANNELS) {
+    const count = channelSummary[ch].peaks;
+    if (count >= 4 && count <= 20) {
+      if (count > maxRepsInRange) {
+        maxRepsInRange = count;
+        bestCh = ch;
+        consensusCount = count;
+      }
+    }
+  }
+
+  // Consensus confidence based on agreement among channels that fall in [4, 20]
+  const qualifyingCounts = CHANNELS.map(ch => channelSummary[ch].peaks).filter(c => c >= 4 && c <= 20);
+  let confidence = 0.85;
+  if (qualifyingCounts.length > 1) {
+    const minCount = Math.min(...qualifyingCounts);
+    const maxCount = Math.max(...qualifyingCounts);
+    const diff = maxCount - minCount;
+    confidence = Math.max(0.5, 1 - diff / maxCount);
+  } else if (qualifyingCounts.length === 1) {
+    confidence = 0.80;
+  } else {
+    confidence = 0.50; // no channels in range [4, 20]
+  }
+
   return {
     csvData,
-    repCount: primaryRepResult.count,
-    confidence: 0.85, // Placeholder
+    repCount: consensusCount,
+    confidence: Math.round(confidence * 100) / 100,
     channelSummary,
     combinedRepCount: combinedRepResult.count,
     combinedConfidence: 0.90 // Placeholder

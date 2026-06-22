@@ -489,7 +489,7 @@ function OverviewView() {
   const totalSec = active.samples.length / active.sampleRate;
 
   // Get physiologically-accurate quality from RAW data (peak-based assessment)
-  const qualityMetrics = calculateQualityFromRaw(rawActive, CHANNELS, 2);
+  const qualityMetrics = calculateQualityFromRaw(rawActive, CHANNELS, 2.5);
 
   const metrics = CHANNELS.map((ch) => {
     const arr = channelArray(active, ch);
@@ -1175,7 +1175,7 @@ function ReportView() {
   const ds = active;
 
   // Use same quality calculation as OverviewView for consistency
-  const qualityMetrics = rawActive ? calculateQualityFromRaw(rawActive, CHANNELS, 2) : null;
+  const qualityMetrics = rawActive ? calculateQualityFromRaw(rawActive, CHANNELS, 2.5) : null;
 
   const metrics = CHANNELS.map((ch) => {
     const arr = channelArray(active, ch);
