@@ -1137,63 +1137,63 @@ export function preprocessChannelAdvanced(
  */
 export const EXERCISE_CONFIG = {
   walking: {
-    primaryChannels: ['ch3', 'ch4'] as Channel[],
-    minRepGapMs: 800,
-    thresholdPct: 70,
-    channelWeights: { ch1: 0.0, ch2: 0.0, ch3: 0.5, ch4: 0.5 }
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
+    thresholdPct: 80,
+    channelWeights: { ch1: 0.5, ch2: 0.0, ch3: 0.25, ch4: 0.25 }
   },
   stair_ascent: {
-    primaryChannels: ['ch1', 'ch3'] as Channel[],
-    minRepGapMs: 1000,
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
     thresholdPct: 70,
     channelWeights: { ch1: 0.6, ch2: 0.0, ch3: 0.4, ch4: 0.0 }
   },
   stair_descent: {
-    primaryChannels: ['ch1', 'ch2'] as Channel[],
-    minRepGapMs: 1000,
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
     thresholdPct: 70,
     channelWeights: { ch1: 0.7, ch2: 0.3, ch3: 0.0, ch4: 0.0 }
   },
   calf_raises: {
-    primaryChannels: ['ch3', 'ch4'] as Channel[],
-    minRepGapMs: 1500,
-    thresholdPct: 65,
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
+    thresholdPct: 70,
     channelWeights: { ch1: 0.0, ch2: 0.0, ch3: 0.7, ch4: 0.3 }
   },
   lunges: {
-    primaryChannels: ['ch1', 'ch2'] as Channel[],
-    minRepGapMs: 1500,
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
     thresholdPct: 70,
     channelWeights: { ch1: 0.5, ch2: 0.5, ch3: 0.0, ch4: 0.0 }
   },
   leg_press: {
-    primaryChannels: ['ch1', 'ch3'] as Channel[],
-    minRepGapMs: 1800,
-    thresholdPct: 70,
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
+    thresholdPct: 75,
     channelWeights: { ch1: 0.6, ch2: 0.0, ch3: 0.4, ch4: 0.0 }
   },
   squats: {
-    primaryChannels: ['ch1', 'ch2'] as Channel[],
-    minRepGapMs: 2000,
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
     thresholdPct: 70,
     channelWeights: { ch1: 0.6, ch2: 0.4, ch3: 0.0, ch4: 0.0 }
   },
   squat: {
-    primaryChannels: ['ch1', 'ch2'] as Channel[],
-    minRepGapMs: 2000,
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
     thresholdPct: 70,
     channelWeights: { ch1: 0.6, ch2: 0.4, ch3: 0.0, ch4: 0.0 }
   },
   jumping: {
-    primaryChannels: ['ch1', 'ch3'] as Channel[],
-    minRepGapMs: 1000,
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
     thresholdPct: 70,
     channelWeights: { ch1: 0.5, ch2: 0.0, ch3: 0.5, ch4: 0.0 }
   },
   cycling: {
-    primaryChannels: ['ch1', 'ch2', 'ch3'] as Channel[],
-    minRepGapMs: 900,
-    thresholdPct: 70,
+    primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
+    minRepGapMs: 400,
+    thresholdPct: 75,
     channelWeights: { ch1: 0.5, ch2: 0.3, ch3: 0.2, ch4: 0.0 }
   }
 };
