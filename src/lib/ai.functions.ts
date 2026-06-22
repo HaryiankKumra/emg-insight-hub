@@ -119,18 +119,8 @@ export const analyzeEmg = createServerFn({ method: "POST" })
     }
 
     const geminiKey = process.env.GEMINI_API_KEY;
-    const lovableKey = process.env.LOVABLE_API_KEY;
-
-    // Determine which API to use
-    // If GEMINI_API_KEY starts with 'AIza', it's a real Google key; if it starts with 'AQ.', it's a Lovable key
-    const isLovableKey = geminiKey?.startsWith("AQ.");
-    const actualGeminiKey = !isLovableKey ? geminiKey : undefined;
-    const actualLovableKey = isLovableKey ? geminiKey : lovableKey;
-
-    if (!actualGeminiKey && !actualLovableKey) {
-      throw new Error(
-        "Missing API Key. Set GEMINI_API_KEY (format: AIza...) or LOVABLE_API_KEY in the environment.",
-      );
+    if (!geminiKey) {
+      throw new Error("Missing GEMINI_API_KEY. Add your Google AI Studio key (format: AIza...) in project secrets.");
     }
 
     const prompt = `You are a biomedical signal engineer reviewing surface EMG (sEMG) data captured from MyoWare 2.0 sensors on an ESP32 at ${data.sampleRate} Hz. Values are raw mV, baseline-centered.
@@ -154,81 +144,35 @@ Give a concise expert report in markdown with these sections:
 
 Be specific: call out the strongest and weakest channels by name, flag suspected electrode lift / motion artifact / powerline noise (50/60 Hz) if frequencies/quality suggest it, note expected sEMG band is 20–450 Hz with dominant power 50–150 Hz, and suggest concrete fixes. Keep under ~250 words.`;
 
-    if (actualGeminiKey) {
-      // Use official Google Gen AI SDK with rate limiting
-      if (!geminiLimiter.canMakeRequest()) {
-        const retryAfter = geminiLimiter.getRetryAfterSeconds();
-        throw new Error(
-          `API rate limit exceeded. Please wait ${retryAfter} second${retryAfter !== 1 ? "s" : ""} before trying again.`,
-        );
-      }
+    if (!geminiLimiter.canMakeRequest()) {
+      const retryAfter = geminiLimiter.getRetryAfterSeconds();
+      throw new Error(
+        `Rate limit: wait ${retryAfter}s before retrying.`,
+      );
+    }
 
-      const ai = new GoogleGenAI({ apiKey: actualGeminiKey });
-      try {
-        geminiLimiter.recordRequest();
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: prompt,
-          config: {
-            systemInstruction: "You are a precise biomedical signal-processing assistant.",
-            maxOutputTokens: 800,
-          },
-        });
-        const text = response.text ?? "(no response)";
-
-        // Cache the successful result
-        analysisCache.set(cacheKey, { text, timestamp: Date.now() });
-
-        return { text, cached: false };
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-
-        // Handle specific API errors
-        if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED")) {
-          throw new Error(
-            "API quota exceeded. The Gemini API has reached its rate limit. Please try again in a few moments or upgrade your quota at https://cloud.google.com/docs/quotas/help/request_increase",
-          );
-        }
-        if (errMsg.includes("401") || errMsg.includes("UNAUTHENTICATED")) {
-          throw new Error("Invalid Gemini API key. Please check your GEMINI_API_KEY environment variable.");
-        }
-
-        throw new Error(`Gemini SDK error: ${errMsg}`);
-      }
-    } else {
-      // Use Lovable gateway
-      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${actualLovableKey}`,
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
+    try {
+      geminiLimiter.recordRequest();
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          systemInstruction: "You are a precise biomedical signal-processing assistant.",
+          maxOutputTokens: 800,
         },
-        body: JSON.stringify({
-          model: "google/gemini-3.5-flash",
-          messages: [
-            {
-              role: "system",
-              content: "You are a precise biomedical signal-processing assistant.",
-            },
-            { role: "user", content: prompt },
-          ],
-        }),
       });
-
-      if (!res.ok) {
-        const t = await res.text();
-        if (res.status === 429) throw new Error("AI rate limit — try again in a moment.");
-        if (res.status === 402)
-          throw new Error("AI credits exhausted — add credits in workspace billing.");
-        if (res.status === 401) throw new Error("Invalid Lovable API key. Check your GEMINI_API_KEY or LOVABLE_API_KEY.");
-        throw new Error(`AI gateway error ${res.status}: ${t.slice(0, 200)}`);
-      }
-      const json = await res.json();
-      const text: string = json.choices?.[0]?.message?.content ?? "(no response)";
-
-      // Cache the successful result
+      const text = response.text ?? "(no response)";
       analysisCache.set(cacheKey, { text, timestamp: Date.now() });
-
       return { text, cached: false };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED")) {
+        throw new Error("Gemini quota exceeded. Try again shortly.");
+      }
+      if (errMsg.includes("401") || errMsg.includes("UNAUTHENTICATED") || errMsg.includes("API_KEY_INVALID")) {
+        throw new Error("Invalid GEMINI_API_KEY. Check your key in project secrets.");
+      }
+      throw new Error(`Gemini error: ${errMsg}`);
     }
   });
