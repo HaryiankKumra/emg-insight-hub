@@ -1203,8 +1203,8 @@ export const EXERCISE_CONFIG = {
   },
   jumping: {
     primaryChannels: ['ch1', 'ch2', 'ch3', 'ch4'] as Channel[],
-    minRepGapMs: 400,
-    thresholdPct: 70,
+    minRepGapMs: 500,
+    thresholdPct: 80,
     channelWeights: { ch1: 0.5, ch2: 0.0, ch3: 0.5, ch4: 0.0 }
   },
   cycling: {
