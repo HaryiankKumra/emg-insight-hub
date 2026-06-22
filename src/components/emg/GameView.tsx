@@ -1680,9 +1680,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
   const handleStopGame = () => {
     // Stop game immediately and show results
+    gameRef.current.sessionEndTime = Date.now();
     setShowStopButton(false);
     changePhase("results");
-    
+
     // Stop serialManager recording
     if (serialManager.getIsRecording()) {
       const dataset = serialManager.stopRecording(true);
