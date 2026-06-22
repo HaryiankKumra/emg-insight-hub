@@ -816,7 +816,17 @@ function UploadView() {
 
 function SignalView() {
   const { active } = useEmgStore();
-  const [selected, setSelected] = useState<Channel[]>([...CHANNELS]);
+  const [selected, setSelected] = useState<Channel[]>([]);
+
+  useEffect(() => {
+    if (!active) return;
+    const activeChs = CHANNELS.filter(ch => {
+      const arr = channelArray(active, ch);
+      return rms(arr) > 1e-3;
+    });
+    setSelected(activeChs.length > 0 ? activeChs : [CHANNELS[0]]);
+  }, [active]);
+
   if (!active) return <EmptyState msg="No dataset loaded" />;
 
   const toggle = (ch: Channel) =>
@@ -1189,7 +1199,7 @@ function ReportView() {
     
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import("html2canvas"),
+        import("html2canvas-pro"),
         import("jspdf"),
       ]);
       
@@ -1199,11 +1209,6 @@ function ReportView() {
       // Create a clone to avoid side effects and style it off-screen
       const originalWidth = el.clientWidth || 800;
       const clone = el.cloneNode(true) as HTMLElement;
-      clone.style.position = "absolute";
-      clone.style.left = "-9999px";
-      clone.style.top = "0px";
-      clone.style.width = `${originalWidth}px`;
-      clone.style.backgroundColor = "#0d121b";
       
       // Inline resolved computed styles recursively
       const inlineStyles = (original: Element, cloneNode: Element) => {
@@ -1213,6 +1218,11 @@ function ReportView() {
         if (style.color) cloneHtml.style.color = style.color;
         if (style.backgroundColor) cloneHtml.style.backgroundColor = style.backgroundColor;
         if (style.borderColor) cloneHtml.style.borderColor = style.borderColor;
+        if (style.fontSize) cloneHtml.style.fontSize = style.fontSize;
+        if (style.fontFamily) cloneHtml.style.fontFamily = style.fontFamily;
+        if (style.fontWeight) cloneHtml.style.fontWeight = style.fontWeight;
+        if (style.padding) cloneHtml.style.padding = style.padding;
+        if (style.margin) cloneHtml.style.margin = style.margin;
         
         // Inline SVG styling attributes
         const tagName = original.tagName.toLowerCase();
@@ -1241,21 +1251,67 @@ function ReportView() {
       };
       
       inlineStyles(el, clone);
-      document.body.appendChild(clone);
-      
-      // Capture with robust settings
-      const canvas = await html2canvas(clone, { 
-        backgroundColor: "#0d121b", 
-        scale: 1.5,
-        allowTaint: true,
-        useCORS: true,
-        logging: false,
-        imageTimeout: 15000,
-        width: originalWidth,
-        windowWidth: originalWidth,
-      });
-      
-      document.body.removeChild(clone);
+
+      // Create isolated iframe off-screen to prevent oklch CSS stylesheet parsing crash
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "absolute";
+      iframe.style.left = "-9999px";
+      iframe.style.top = "0px";
+      iframe.style.width = `${originalWidth}px`;
+      iframe.style.height = "0px";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) {
+        throw new Error("Could not access iframe document");
+      }
+
+      iframeDoc.open();
+      iframeDoc.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body {
+              margin: 0;
+              padding: 0;
+              background-color: #0d121b;
+              color: #ffffff;
+              font-family: monospace;
+            }
+          </style>
+        </head>
+        <body>
+          <div id="capture-root"></div>
+        </body>
+        </html>
+      `);
+      iframeDoc.close();
+
+      const root = iframeDoc.getElementById("capture-root");
+      if (!root) {
+        throw new Error("Could not find capture root in iframe");
+      }
+      root.appendChild(clone);
+
+      let canvas;
+      try {
+        // Capture within the isolated document context
+        canvas = await html2canvas(clone, { 
+          backgroundColor: "#0d121b", 
+          scale: 1.5,
+          allowTaint: true,
+          useCORS: true,
+          logging: false,
+          imageTimeout: 15000,
+          width: originalWidth,
+          windowWidth: originalWidth,
+        });
+      } finally {
+        // Remove iframe safely
+        document.body.removeChild(iframe);
+      }
       
       // Generate PDF with proper pagination
       const img = canvas.toDataURL("image/png");
@@ -1374,7 +1430,7 @@ function ReportView() {
               {(active.samples.length / active.sampleRate).toFixed(2)} s
             </div>
           </div>
-          <ScopeChart ds={active} height={220} />
+          <ScopeChart ds={active} channels={metrics.filter(m => m.rms > 1e-3).map(m => m.ch).length > 0 ? metrics.filter(m => m.rms > 1e-3).map(m => m.ch) : [CHANNELS[0]]} height={220} />
           <table className="w-full text-[11px] tabular-nums">
             <thead className="text-[10px] uppercase tracking-widest text-muted-foreground">
               <tr className="border-b border-border">
