@@ -310,6 +310,13 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     gameRef.current.combMode = combMode;
   }, [threshold, baseline, numHurdles, attemptTimeLimit, sessionTimeLimit, activeChannels, combMode]);
 
+  // Update sessionTimeRemaining when sessionTimeLimit changes in setup phase
+  useEffect(() => {
+    if (phase === "setup") {
+      setSessionTimeRemaining(sessionTimeLimit * 60);
+    }
+  }, [sessionTimeLimit, phase]);
+
   // Handle Serial Subscriptions
   useEffect(() => {
     const unsubscribe = serialManager.registerListener(() => {

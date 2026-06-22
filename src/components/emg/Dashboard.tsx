@@ -510,7 +510,20 @@ function OverviewView() {
   const avgQ = Math.round(metrics.reduce((s, m) => s + m.q.score, 0) / metrics.length);
   const strongest = [...metrics].sort((a, b) => b.rms - a.rms)[0];
 
-  const classification = classifyExerciseHeuristically(metrics, totalSec);
+  // Prioritize label from CSV comment metadata or filename
+  const exerciseLabelName = active.exerciseLabel
+    ? active.exerciseLabel.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    : null;
+
+  const classification = active.exerciseLabel
+    ? {
+        exercise: exerciseLabelName!,
+        confidence: 100,
+        reasoning: `Extracted directly from the CSV comments/filename metadata.`,
+        alternative: "N/A",
+      }
+    : classifyExerciseHeuristically(metrics, totalSec);
+
   const repConsensus = analyzeRepConsensus(metrics);
 
   return (

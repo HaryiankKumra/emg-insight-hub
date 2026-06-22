@@ -31,6 +31,7 @@ export interface EmgDataset {
   uploadedAt: number;
   source: "mock" | "csv";
   isFiltered?: boolean;
+  exerciseLabel?: string;
 }
 
 export function mean(a: number[]): number {
@@ -274,7 +275,7 @@ export function snrFromBaseline(active: number[], baseline: number[]): number {
   return 20 * Math.log10(sigRms / noiseRms);
 }
 
-export function detectExerciseFromName(name: string): string {
+export function detectExerciseFromName(name: string): string | null {
   const clean = name.toLowerCase().replace(/[^a-z0-9]/g, "_");
   if (clean.includes("walking")) return "walking";
   if (clean.includes("cycling")) return "cycling";
@@ -285,7 +286,7 @@ export function detectExerciseFromName(name: string): string {
   if (clean.includes("stair_ascent") || clean.includes("stair_asc")) return "stair_ascent";
   if (clean.includes("stair_descent") || clean.includes("stair_desc")) return "stair_descent";
   if (clean.includes("calf_raise") || clean.includes("calfraise") || clean.includes("calf")) return "calf_raises";
-  return "lunges"; // Default fallback
+  return null; // Return null instead of falling back to lunges
 }
 
 // Calculate quality from RAW (unfiltered) dataset using ADAPTIVE baseline detection
@@ -445,7 +446,7 @@ export function calculateQualityFromRaw(
     const snrGrade = qualityFromSnr(snrDb);
 
     // Metric 2: Rep-window based quality (counts actual reps, not peaks)
-    const exercise = detectExerciseFromName(rawDs.name);
+    const exercise = detectExerciseFromName(rawDs.name) || "lunges";
     const config = EXERCISE_CONFIG[exercise as keyof typeof EXERCISE_CONFIG] || EXERCISE_CONFIG.lunges;
     const repQuality = assessEmgSignalQuality(activeValues, fs, config.minRepGapMs, config.thresholdPct);
 

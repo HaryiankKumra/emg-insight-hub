@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import type { EmgDataset, EmgSample } from "./signal";
-import { interpolateChannel, mean } from "./signal";
+import { interpolateChannel, mean, detectExerciseFromName } from "./signal";
 
 // Parses EMG CSVs of the form:
 //   # participant=... | ...
@@ -120,6 +120,24 @@ export async function parseCsvFile(file: File, fallbackSampleRate = 1000): Promi
             }
           }
 
+          // Parse exercise label from comments or file name
+          let commentExercise: string | null = null;
+          const textLines = text.split("\n");
+          for (const line of textLines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine.startsWith("#")) {
+              const match = trimmedLine.match(/(?:exercise|label)=([a-z0-9_]+)/i);
+              if (match) {
+                commentExercise = match[1].toLowerCase().trim();
+                break;
+              }
+            } else if (trimmedLine !== "") {
+              break;
+            }
+          }
+          
+          const exerciseLabel = (commentExercise ? detectExerciseFromName(commentExercise) : null) || detectExerciseFromName(file.name) || undefined;
+
           resolve({
             id: `csv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             name: file.name,
@@ -128,6 +146,7 @@ export async function parseCsvFile(file: File, fallbackSampleRate = 1000): Promi
             uploadedAt: Date.now(),
             source: "csv",
             isFiltered,
+            exerciseLabel,
           });
         } catch (e) {
           reject(e);
