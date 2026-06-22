@@ -1228,7 +1228,6 @@ function ReportView() {
         allowTaint: true,
         useCORS: true,
         logging: false,
-        timeout: 15000,
         imageTimeout: 15000,
         windowHeight: clone.scrollHeight,
         windowWidth: clone.scrollWidth,
