@@ -819,7 +819,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       ctx.resetTransform();
       ctx.scale(dpr, dpr);
 
-      // Handle Shake
+      // === Camera shake ===
       ctx.save();
       const shake = gameRef.current.shake;
       if (shake.t > 0) {
@@ -827,22 +827,33 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         const mag = shake.mag * (shake.t > 0 ? 1 : 0);
         ctx.translate((Math.random() * 2 - 1) * mag, (Math.random() * 2 - 1) * mag);
       }
-
       ctx.clearRect(-20, -20, w + 40, h + 40);
 
-      // 1. Draw Background Gradient
+      const now = Date.now();
+      const NEON = "#00e5c8";
+      const NEON_DIM = "rgba(0,229,200,0.55)";
+      const NEON_GHOST = "rgba(0,229,200,0.10)";
+      const WARN = "#ff357a";
+      const OK = "#7fffcf";
+
+      // === 1. Scope background ===
       const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "#090d16");
-      bg.addColorStop(0.55, "#0b1220");
-      bg.addColorStop(1, "#070b13");
+      bg.addColorStop(0, "#060b15");
+      bg.addColorStop(0.6, "#08111e");
+      bg.addColorStop(1, "#03060c");
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, w, h);
 
-      // Subtle Grid lines
-      ctx.strokeStyle = "rgba(0, 229, 200, 0.02)";
+      // CRT scanlines
+      ctx.fillStyle = "rgba(0, 229, 200, 0.025)";
+      for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
+
+      // Scope grid
+      const grid = 40;
+      ctx.strokeStyle = "rgba(0, 229, 200, 0.07)";
       ctx.lineWidth = 1;
-      const grid = 50;
-      for (let gx = 0; gx < w; gx += grid) {
+      const offsetX = (gameRef.current.scrollOffset || 0) % grid;
+      for (let gx = -offsetX; gx < w; gx += grid) {
         ctx.beginPath();
         ctx.moveTo(gx, 0);
         ctx.lineTo(gx, h);
@@ -855,288 +866,379 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         ctx.stroke();
       }
 
-      // Title watermark
-      ctx.font = "bold 9px var(--font-mono)";
-      ctx.fillStyle = "rgba(0, 229, 200, 0.05)";
-      ctx.textAlign = "right";
-      ctx.fillText("MyoHurdle Protocol v2.0", w - 20, h - 18);
-      ctx.textAlign = "left";
+      // Crosshair
+      ctx.strokeStyle = "rgba(0, 229, 200, 0.12)";
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h);
+      ctx.moveTo(0, h * 0.5); ctx.lineTo(w, h * 0.5);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-      // 2. Draw Track
-      const ty = h * 0.7;
-      const tx = w * 0.06;
-      const tr = w * 0.94;
+      // Corner tick marks
+      ctx.strokeStyle = NEON_DIM;
+      ctx.lineWidth = 1.5;
+      const tick = 10;
+      [[10,10],[w-10,10],[10,h-10],[w-10,h-10]].forEach(([x,y]) => {
+        ctx.beginPath();
+        ctx.moveTo(x, y); ctx.lineTo(x + (x<w/2?tick:-tick), y);
+        ctx.moveTo(x, y); ctx.lineTo(x, y + (y<h/2?tick:-tick));
+        ctx.stroke();
+      });
 
-      // Ground fill
-      const gGrad = ctx.createLinearGradient(0, ty, 0, h);
-      gGrad.addColorStop(0, "rgba(0, 80, 60, 0.2)");
-      gGrad.addColorStop(0.4, "rgba(0, 20, 20, 0.1)");
-      gGrad.addColorStop(1, "rgba(0, 0, 0, 0.05)");
-      ctx.fillStyle = gGrad;
+      // === 2. Ground / horizon ===
+      const ty = h * 0.72;
+
+      // Glow under horizon
+      const hg = ctx.createLinearGradient(0, ty, 0, h);
+      hg.addColorStop(0, "rgba(0, 229, 200, 0.18)");
+      hg.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = hg;
       ctx.fillRect(0, ty, w, h - ty);
 
-      // Glowing track line
-      ctx.shadowColor = "rgba(0, 229, 200, 0.4)";
-      ctx.shadowBlur = 10;
-      ctx.strokeStyle = "rgba(0, 229, 200, 0.6)";
+      // Horizon line (glowing)
+      ctx.shadowColor = NEON;
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = NEON;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(tx, ty);
-      ctx.lineTo(tr, ty);
+      ctx.moveTo(0, ty); ctx.lineTo(w, ty);
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Start/Finish indicators
-      ctx.fillStyle = "rgba(0, 229, 200, 0.4)";
-      ctx.font = "8px var(--font-mono)";
-      ctx.textAlign = "center";
-      ctx.fillText("START", tx + 2, ty + 18);
-      ctx.fillText("FINISH", tr - 2, ty + 18);
+      // Scrolling dashed ground texture
+      ctx.strokeStyle = "rgba(0, 229, 200, 0.4)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([12, 16]);
+      ctx.lineDashOffset = -gameRef.current.scrollOffset;
+      ctx.beginPath();
+      ctx.moveTo(0, ty + 6); ctx.lineTo(w, ty + 6);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
 
-      // 3. Draw Hurdles (Dino-style: hurdles scroll from right to left)
+      // === 3. Hurdles (cactus-style neon obelisks scrolling right→left) ===
       const hH = hurdleVisualH(h);
-      const now = Date.now();
-      const hurdleSpacing = 120; // pixels between hurdles
-      const hurdleStartX = w * 0.9; // Where hurdles start (right side)
-      const hw = 12;
-      
-      for (let i = 0; i < gameRef.current.numHurdles; i++) {
-        // Position based on scrollOffset
-        const hurdleBaseX = hurdleStartX + i * hurdleSpacing;
-        const hx = hurdleBaseX - gameRef.current.scrollOffset;
-        
-        // Skip if off-screen
-        if (hx < -20 || hx > w + 20) continue;
-        
-        const top = ty - hH;
+      const hurdleSpacing = 140;
+      const hurdleStartX = w * 0.92;
+      const hw = 16;
 
-        let state = "future";
+      for (let i = 0; i < gameRef.current.numHurdles; i++) {
+        const hx = hurdleStartX + i * hurdleSpacing - gameRef.current.scrollOffset;
+        if (hx < -30 || hx > w + 30) continue;
+
+        const top = ty - hH;
+        let state: "done" | "current" | "future" = "future";
         if (i < gameRef.current.currentHurdle) state = "done";
         else if (i === gameRef.current.currentHurdle) state = "current";
 
         if (state === "done") {
-          ctx.fillStyle = "rgba(0, 201, 122, 0.1)";
-          ctx.strokeStyle = "rgba(0, 201, 122, 0.4)";
+          // Faded green ghost
+          ctx.fillStyle = "rgba(127, 255, 207, 0.06)";
+          ctx.strokeStyle = "rgba(127, 255, 207, 0.5)";
           ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.rect(hx - hw / 2, top, hw, hH);
-          ctx.fill();
-          ctx.stroke();
+          ctx.fill(); ctx.stroke();
 
-          // Green check mark
-          ctx.strokeStyle = "#00c97a";
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = OK;
+          ctx.shadowColor = OK; ctx.shadowBlur = 8;
+          ctx.lineWidth = 2.5;
           ctx.beginPath();
-          ctx.moveTo(hx - 4, ty - hH / 2 + 2);
+          ctx.moveTo(hx - 5, ty - hH / 2);
           ctx.lineTo(hx - 1, ty - hH / 2 + 5);
-          ctx.lineTo(hx + 5, ty - hH / 2 - 4);
-          ctx.stroke();
-
-          ctx.fillStyle = "rgba(0, 201, 122, 0.5)";
-          ctx.font = "8px var(--font-mono)";
-          ctx.fillText((i + 1).toString(), hx, ty + 16);
-        } else if (state === "current") {
-          const pulse = 0.65 + 0.35 * Math.sin(now / 280);
-          ctx.shadowColor = `rgba(0, 229, 200, ${0.5 * pulse})`;
-          ctx.shadowBlur = 20 * pulse;
-          ctx.fillStyle = `rgba(0, 229, 200, ${0.1 * pulse})`;
-          ctx.strokeStyle = `rgba(0, 229, 200, ${0.9 * pulse})`;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.rect(hx - hw / 2, top, hw, hH);
-          ctx.fill();
+          ctx.lineTo(hx + 6, ty - hH / 2 - 5);
           ctx.stroke();
           ctx.shadowBlur = 0;
+        } else if (state === "current") {
+          const pulse = 0.6 + 0.4 * Math.sin(now / 220);
+          // Outer glow halo
+          ctx.shadowColor = NEON;
+          ctx.shadowBlur = 28 * pulse;
+          ctx.fillStyle = `rgba(0, 229, 200, ${0.18 * pulse})`;
+          ctx.strokeStyle = NEON;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.rect(hx - hw / 2, top, hw, hH);
+          ctx.fill(); ctx.stroke();
+          ctx.shadowBlur = 0;
 
-          // Band subdivisions
-          for (let b = 1; b < 4; b++) {
-            ctx.strokeStyle = `rgba(0, 229, 200, ${0.12 * pulse})`;
-            ctx.lineWidth = 1;
+          // Inner band rungs
+          ctx.strokeStyle = `rgba(0, 229, 200, ${0.35 * pulse})`;
+          ctx.lineWidth = 1;
+          for (let b = 1; b < 5; b++) {
             ctx.beginPath();
-            ctx.moveTo(hx - hw / 2, top + (hH * b) / 4);
-            ctx.lineTo(hx + hw / 2, top + (hH * b) / 4);
+            ctx.moveTo(hx - hw / 2 + 2, top + (hH * b) / 5);
+            ctx.lineTo(hx + hw / 2 - 2, top + (hH * b) / 5);
             ctx.stroke();
           }
 
-          // Floating pointer
-          ctx.fillStyle = `rgba(0, 229, 200, ${0.7 * pulse})`;
-          ctx.font = "8px var(--font-mono)";
-          ctx.fillText("▼", hx, top - 8);
+          // Hover arrow
+          ctx.fillStyle = NEON;
+          ctx.shadowColor = NEON; ctx.shadowBlur = 10;
+          ctx.font = "bold 14px var(--font-mono)";
+          ctx.textAlign = "center";
+          ctx.fillText("▼", hx, top - 8 - Math.sin(now / 200) * 3);
+          ctx.shadowBlur = 0;
 
+          // Threshold tag
+          ctx.fillStyle = NEON_DIM;
           ctx.font = "bold 9px var(--font-mono)";
-          ctx.fillStyle = "rgba(0, 229, 200, 0.9)";
-          ctx.fillText((i + 1).toString(), hx, ty + 16);
+          ctx.fillText(`H${i + 1}`, hx, ty + 18);
         } else {
-          // Future grey hurdle
-          ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+          // Wireframe future
+          ctx.fillStyle = "rgba(255, 255, 255, 0.015)";
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
           ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.rect(hx - hw / 2, top, hw, hH);
-          ctx.fill();
-          ctx.stroke();
+          ctx.fill(); ctx.stroke();
 
-          ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-          ctx.font = "8px var(--font-mono)";
-          ctx.fillText((i + 1).toString(), hx, ty + 16);
+          ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+          ctx.font = "9px var(--font-mono)";
+          ctx.textAlign = "center";
+          ctx.fillText((i + 1).toString(), hx, ty + 18);
         }
       }
+      ctx.textAlign = "left";
 
-      // 4. Draw character (centered on screen in dino-style)
+      // === 4. Neon T-Rex character ===
       gameRef.current.charAnimT += dt;
-      const cx = w / 2; // Keep centered
-      const cy = ty - 36 + gameRef.current.charY;
+      const cx = w * 0.22;
+      const cy = ty + gameRef.current.charY;
+      const phaseNow = gameRef.current.phase;
 
-      let color = "#00e5c8";
-      if (gameRef.current.phase === "jumping") color = "#7fffcf";
-      else if (gameRef.current.phase === "hit") color = "#ff7043";
+      let bodyCol = NEON;
+      if (phaseNow === "jumping") bodyCol = OK;
+      else if (phaseNow === "hit") bodyCol = WARN;
 
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.shadowColor = color;
-      ctx.shadowBlur = gameRef.current.phase === "jumping" ? 28 : 10;
 
-      // Handle hit crash rotation
-      if (gameRef.current.phase === "hit") {
-        const rot = (1.2 - gameRef.current.hitTimer) * (Math.PI * 2);
-        ctx.translate(0, -18);
-        ctx.rotate(rot);
-        ctx.translate(0, 18);
-        ctx.globalAlpha = Math.max(0, gameRef.current.hitTimer / 1.2);
-      }
-
-      // Skeletal Coordinates
-      const hipY = -14;
-      const hipXLeft = -2.5;
-      const hipXRight = 2.5;
-      const torsoLean =
-        gameRef.current.phase === "approaching"
-          ? 0.22
-          : gameRef.current.phase === "jumping"
-            ? -0.15
-            : 0;
-      const shoulderY = -26;
-      const shoulderXLeft = -3 + Math.sin(torsoLean) * 12;
-      const shoulderXRight = 3 + Math.sin(torsoLean) * 12;
-
-      // Cycle-dependent joints angles
-      const cycle = gameRef.current.charAnimT * 15;
-      let thighAngle1 = 0.05,
-        kneeAngle1 = 0.05,
-        thighAngle2 = -0.05,
-        kneeAngle2 = 0.05;
-      let armAngle1 = 0.1,
-        forearmAngle1 = 0.1,
-        armAngle2 = -0.1,
-        forearmAngle2 = 0.1;
-
-      if (gameRef.current.phase === "approaching") {
-        thighAngle1 = Math.sin(cycle) * 0.7 + 0.15;
-        thighAngle2 = Math.sin(cycle + Math.PI) * 0.7 + 0.15;
-        kneeAngle1 = (Math.cos(cycle + Math.PI / 3) * 0.5 + 0.5) * 1.25 + 0.1;
-        kneeAngle2 = (Math.cos(cycle + Math.PI + Math.PI / 3) * 0.5 + 0.5) * 1.25 + 0.1;
-        armAngle1 = -Math.sin(cycle) * 0.8;
-        forearmAngle1 = (Math.sin(cycle + Math.PI / 2) * 0.35 + 0.65) * 1.3;
-        armAngle2 = -Math.sin(cycle + Math.PI) * 0.8;
-        forearmAngle2 = (Math.sin(cycle + Math.PI + Math.PI / 2) * 0.35 + 0.65) * 1.3;
-      } else if (gameRef.current.phase === "jumping") {
-        thighAngle1 = 1.3;
-        kneeAngle1 = 0.9;
-        thighAngle2 = -0.9;
-        kneeAngle2 = 0.3;
-        armAngle1 = -1.1;
-        forearmAngle1 = 0.5;
-        armAngle2 = 1.1;
-        forearmAngle2 = 0.5;
-      } else if (gameRef.current.phase === "hit") {
-        thighAngle1 = 0.9;
-        kneeAngle1 = 1.1;
-        thighAngle2 = -0.5;
-        kneeAngle2 = 1.3;
-        armAngle1 = -1.3;
-        forearmAngle1 = 0.8;
-        armAngle2 = 1.3;
-        forearmAngle2 = 0.8;
-      }
-
-      // Helper function to draw limbs
-      const drawLimbPath = (
-        lx1: number,
-        ly1: number,
-        len1: number,
-        len2: number,
-        a1: number,
-        a2: number,
-        col: string,
-        thick: number,
-      ) => {
-        const lx2 = lx1 + Math.sin(a1) * len1;
-        const ly2 = ly1 + Math.cos(a1) * len1;
-        const lx3 = lx2 + Math.sin(a1 - a2) * len2;
-        const ly3 = ly2 + Math.cos(a1 - a2) * len2;
-        ctx.strokeStyle = col;
-        ctx.lineWidth = thick;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.beginPath();
-        ctx.moveTo(lx1, ly1);
-        ctx.lineTo(lx2, ly2);
-        ctx.lineTo(lx3, ly3);
-        ctx.stroke();
-      };
-
-      // Draw limbs (Back limbs -> Torso -> Front limbs)
-      drawLimbPath(shoulderXLeft, shoulderY, 7, 7, armAngle2, -forearmAngle2, color + "aa", 2.2);
-      drawLimbPath(hipXLeft, hipY, 9, 9, thighAngle2, kneeAngle2, color + "aa", 3.0);
-
-      // Torso
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 4;
-      ctx.lineCap = "round";
+      // Ground shadow
+      const shadowScale = Math.max(0.3, 1 - Math.abs(gameRef.current.charY) / 60);
+      ctx.fillStyle = `rgba(0, 229, 200, ${0.25 * shadowScale})`;
       ctx.beginPath();
-      ctx.moveTo(0, hipY);
-      ctx.lineTo(Math.sin(torsoLean) * 12, shoulderY);
-      ctx.stroke();
-
-      // Head
-      const headX = Math.sin(torsoLean) * 12 + Math.sin(torsoLean) * 4;
-      const headY = shoulderY - 7;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(headX, headY, 4.5, 0, Math.PI * 2);
+      ctx.ellipse(0, 2, 22 * shadowScale, 4 * shadowScale, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Front limbs
-      drawLimbPath(hipXRight, hipY, 9, 9, thighAngle1, kneeAngle1, color, 3.3);
-      drawLimbPath(shoulderXRight, shoulderY, 7, 7, armAngle1, -forearmAngle1, color, 2.5);
+      // Hit rotation
+      if (phaseNow === "hit") {
+        const rot = (1.2 - gameRef.current.hitTimer) * Math.PI * 1.5;
+        ctx.rotate(rot * 0.5);
+        ctx.globalAlpha = Math.max(0.2, gameRef.current.hitTimer / 1.2);
+      }
 
-      ctx.restore(); // Character coords
+      // === T-Rex wireframe (neon outline) ===
+      ctx.shadowColor = bodyCol;
+      ctx.shadowBlur = phaseNow === "jumping" ? 24 : 14;
+      ctx.strokeStyle = bodyCol;
+      ctx.fillStyle = `${bodyCol}22`;
+      ctx.lineWidth = 2.2;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
 
-      // 5. Draw Particles
+      // Body (chunky dino silhouette, baseline = feet at y=0)
+      ctx.beginPath();
+      // Tail
+      ctx.moveTo(20, -8);
+      ctx.lineTo(28, -14);
+      ctx.lineTo(30, -10);
+      ctx.lineTo(22, -4);
+      // Back
+      ctx.lineTo(10, -18);
+      ctx.lineTo(-6, -26);
+      // Neck + head
+      ctx.lineTo(-14, -34);
+      ctx.lineTo(-22, -36);
+      ctx.lineTo(-26, -32);
+      ctx.lineTo(-26, -26);
+      ctx.lineTo(-18, -24);
+      // Jaw
+      ctx.lineTo(-14, -22);
+      ctx.lineTo(-8, -20);
+      // Belly
+      ctx.lineTo(-2, -10);
+      ctx.lineTo(8, -6);
+      ctx.lineTo(18, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Eye
+      ctx.fillStyle = bodyCol;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(-22, -31, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tiny arm
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.moveTo(-4, -18);
+      ctx.lineTo(-6, -14);
+      ctx.lineTo(-3, -12);
+      ctx.stroke();
+
+      // Legs — animated run cycle (only on ground phases)
+      const runCycle = gameRef.current.charAnimT * 14;
+      let leg1Y = 0, leg2Y = 0;
+      if (phaseNow === "approaching" || phaseNow === "at_hurdle" || phaseNow === "ready" || phaseNow === "resting") {
+        leg1Y = Math.max(0, Math.sin(runCycle) * 4);
+        leg2Y = Math.max(0, Math.sin(runCycle + Math.PI) * 4);
+      } else if (phaseNow === "jumping") {
+        leg1Y = -3; leg2Y = -5;
+      }
+
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 10;
+      // Back leg
+      ctx.beginPath();
+      ctx.moveTo(10, -6);
+      ctx.lineTo(8, -1 - leg2Y);
+      ctx.lineTo(14, 0 - leg2Y);
+      ctx.stroke();
+      // Front leg
+      ctx.beginPath();
+      ctx.moveTo(-2, -6);
+      ctx.lineTo(-4, -1 - leg1Y);
+      ctx.lineTo(2, 0 - leg1Y);
+      ctx.stroke();
+
+      ctx.restore();
+
+      // === 5. Particles ===
       for (let i = gameRef.current.particles.length - 1; i >= 0; i--) {
         const p = gameRef.current.particles[i];
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
+        p.x += p.vx * dt; p.y += p.vy * dt;
         p.vy += 350 * dt;
         p.life -= dt;
-        if (p.life <= 0) {
-          gameRef.current.particles.splice(i, 1);
-          continue;
-        }
+        if (p.life <= 0) { gameRef.current.particles.splice(i, 1); continue; }
         const a = Math.max(0, p.life / p.maxLife);
         ctx.globalAlpha = a;
         ctx.fillStyle = p.color;
         ctx.shadowColor = p.color;
-        ctx.shadowBlur = 7;
+        ctx.shadowBlur = 8;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r * a, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.globalAlpha = 1.0;
+      ctx.globalAlpha = 1;
       ctx.shadowBlur = 0;
 
-      ctx.restore(); // Shake
+      // === 6. On-canvas HUD ===
+      // Top-left: hurdle counter
+      ctx.fillStyle = "rgba(6,11,21,0.78)";
+      ctx.strokeStyle = NEON_DIM;
+      ctx.lineWidth = 1;
+      ctx.fillRect(12, 12, 150, 44);
+      ctx.strokeRect(12, 12, 150, 44);
+      ctx.fillStyle = NEON_DIM;
+      ctx.font = "8px var(--font-mono)";
+      ctx.fillText("HURDLE", 20, 24);
+      ctx.fillStyle = NEON;
+      ctx.shadowColor = NEON; ctx.shadowBlur = 8;
+      ctx.font = "bold 22px var(--font-mono)";
+      ctx.fillText(
+        `${Math.min(gameRef.current.currentHurdle + 1, gameRef.current.numHurdles)}/${gameRef.current.numHurdles}`,
+        20, 48,
+      );
+      ctx.shadowBlur = 0;
+      // mini progress bar
+      const barW = 130;
+      const barX = 20, barY = 50;
+      ctx.fillStyle = "rgba(0, 229, 200, 0.15)";
+      ctx.fillRect(barX, barY, barW, 3);
+      ctx.fillStyle = NEON;
+      ctx.fillRect(barX, barY, barW * (gameRef.current.currentHurdle / Math.max(1, gameRef.current.numHurdles)), 3);
+
+      // Top-right: session timer
+      const tw = 150;
+      ctx.fillStyle = "rgba(6,11,21,0.78)";
+      ctx.strokeStyle = NEON_DIM;
+      ctx.fillRect(w - tw - 12, 12, tw, 44);
+      ctx.strokeRect(w - tw - 12, 12, tw, 44);
+      ctx.fillStyle = NEON_DIM;
+      ctx.font = "8px var(--font-mono)";
+      ctx.textAlign = "right";
+      ctx.fillText("SESSION TIMER", w - 20, 24);
+      const tSec = Math.max(0, sessionTimeRemaining);
+      const mm = Math.floor(tSec / 60).toString().padStart(2, "0");
+      const ss = Math.floor(tSec % 60).toString().padStart(2, "0");
+      const lowTime = tSec < 30;
+      ctx.fillStyle = lowTime ? WARN : NEON;
+      ctx.shadowColor = ctx.fillStyle as string; ctx.shadowBlur = 8;
+      ctx.font = "bold 22px var(--font-mono)";
+      ctx.fillText(`${mm}:${ss}`, w - 20, 48);
+      ctx.shadowBlur = 0;
+      ctx.textAlign = "left";
+
+      // Bottom: EMG vs threshold meter
+      const mY = h - 38;
+      const mH = 22;
+      const mLeft = 14, mRight = w - 14;
+      const mW = mRight - mLeft;
+
+      ctx.fillStyle = "rgba(6,11,21,0.78)";
+      ctx.strokeStyle = NEON_DIM;
+      ctx.fillRect(mLeft, mY, mW, mH);
+      ctx.strokeRect(mLeft, mY, mW, mH);
+
+      const liveRms = gameRef.current.liveRms || 0;
+      const thr = Math.max(1, gameRef.current.threshold);
+      const scaleMax = Math.max(thr * 1.6, liveRms * 1.1, 60);
+      const fillW = Math.min(1, liveRms / scaleMax) * (mW - 4);
+      const over = liveRms >= thr;
+      ctx.fillStyle = over ? OK : NEON_GHOST;
+      if (!over) {
+        ctx.fillStyle = `rgba(0, 229, 200, ${0.25 + 0.5 * (liveRms / thr)})`;
+      }
+      ctx.shadowColor = over ? OK : NEON;
+      ctx.shadowBlur = over ? 18 : 6;
+      ctx.fillRect(mLeft + 2, mY + 2, fillW, mH - 4);
+      ctx.shadowBlur = 0;
+
+      // Threshold marker
+      const thrX = mLeft + 2 + (thr / scaleMax) * (mW - 4);
+      ctx.strokeStyle = WARN;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(thrX, mY - 4); ctx.lineTo(thrX, mY + mH + 4);
+      ctx.stroke();
+      ctx.fillStyle = WARN;
+      ctx.font = "bold 9px var(--font-mono)";
+      ctx.fillText(`THR ${thr.toFixed(0)}`, Math.min(thrX + 4, w - 60), mY - 6);
+
+      // Live value label
+      ctx.fillStyle = NEON;
+      ctx.font = "bold 10px var(--font-mono)";
+      ctx.fillText(`${gameRef.current.liveChLabel}  ${liveRms.toFixed(0)} mV`, mLeft + 6, mY + 15);
+
+      // Big center text (phase prompt)
+      if (cdBigText) {
+        ctx.textAlign = "center";
+        ctx.fillStyle = NEON;
+        ctx.shadowColor = NEON; ctx.shadowBlur = 18;
+        ctx.font = "bold 56px var(--font-mono)";
+        ctx.fillText(cdBigText, w / 2, h * 0.35);
+        ctx.shadowBlur = 0;
+        if (cdSubText) {
+          ctx.fillStyle = cdSubColor || NEON_DIM;
+          ctx.font = "bold 12px var(--font-mono)";
+          ctx.fillText(cdSubText, w / 2, h * 0.35 + 28);
+        }
+        ctx.textAlign = "left";
+      }
+
+      // Screen flash
+      if (screenFlash) {
+        ctx.fillStyle = screenFlash === "green" ? "rgba(127,255,207,0.18)" : "rgba(255,53,122,0.18)";
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      ctx.restore(); // shake
     };
+
 
     // --- Render wave canvas in flex HUD overlay ---
 
