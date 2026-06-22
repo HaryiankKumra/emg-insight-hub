@@ -176,11 +176,28 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
 
         const color = CH_COLORS[chId as 1 | 2 | 3 | 4];
 
-        // Fixed 0-300mV scale (emg-monitor approach - prevents clipping)
-        const yMin = 0;
-        const yMax = 300;
-        const yRange = 300;
-        const yStep = 50;
+        // Determine Y Range - centered around midpoint
+        let yMin = 0;
+        let yMax = 3300;
+
+        if (autoScale[chId]) {
+          const max = Math.max(...data);
+          const min = Math.min(...data);
+          const range = max - min || 10;
+          const pad = range * 0.15;
+          const mid = (max + min) / 2;
+          const halfRange = (range / 2) + pad;
+          yMin = Math.max(0, mid - halfRange);
+          yMax = Math.min(3300, mid + halfRange);
+        }
+
+        // Calculate nice axis steps
+        const yRange = yMax - yMin;
+        let yStep = 100; // Default step
+        if (yRange > 2000) yStep = 500;
+        else if (yRange > 1000) yStep = 200;
+        else if (yRange > 500) yStep = 100;
+        else yStep = 50;
 
         // Reserve space for axes
         const leftMargin = 50;
@@ -236,7 +253,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
           ctx.fillText(`${timeMs.toFixed(0)}ms`, px, plotH + 20);
         }
 
-        // Draw signal with fixed 0-300mV scale
+        // Draw signal
         const stepX = plotW / 500;
 
         ctx.strokeStyle = color.line;
@@ -245,9 +262,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
 
         for (let i = 0; i < data.length; i++) {
           const px = leftMargin + (i * stepX);
-          // Cap at 300mV to prevent clipping (like emg-monitor)
-          const cappedValue = Math.min(data[i], yMax);
-          const py = plotH - ((cappedValue - yMin) / (yMax - yMin || 1)) * plotH;
+          const py = plotH - ((data[i] - yMin) / (yMax - yMin || 1)) * plotH;
 
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
@@ -316,101 +331,28 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
       return;
     }
 
-    // Build metadata header lines (matching emg-monitor format)
-    const now = new Date();
-    const sessionTimestamp = now.toISOString();
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    
-    const metaLine1 = `# participant=${meta.participant} | sex=${meta.sex} | age=${meta.age} | weight_kg=${meta.weight_kg} | height_cm=${meta.height_cm}`;
-    const metaLine2 = `# exercise=${meta.exercise} | trial_no=${meta.trial_no} | label=${meta.exercise_type} | session=${sessionTimestamp} | tz=${timezone}`;
-    
-    // Use muscle names instead of channel labels
-    const muscleNames = {
-      ch1: "Rectus_Femoris_Quad",
-      ch2: "Biceps_Femoris_Hamstring", 
-      ch3: "Gastrocnemius_Lateralis_Calf",
-      ch4: "Tibialis_Anterior_TA",
-    };
-    
-    // Get recording start time
-    const recordStartMs = Date.now() - (lastRecordedDataset.samples.length / (lastRecordedDataset.sampleRate || 1000)) * 1000;
-    
-    // Helper: Generate datetime for a sample index
-    const getDatetimeLocal = (idx: number) => {
-      const sampleTimeMs = recordStartMs + (idx / (lastRecordedDataset.sampleRate || 1000)) * 1000;
-      const sampleDate = new Date(sampleTimeMs);
-      return sampleDate.toLocaleString('sv-SE', { 
-        year: 'numeric', 
-        month: '2-digit', 
-        day: '2-digit', 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        second: '2-digit',
-        fractionalSecondDigits: 3
-      }).replace(' ', 'T');
-    };
-
-    const downloadWideCSV = (filtered: boolean) => {
+    const downloadCSV = (filtered: boolean) => {
       const ds = filtered ? lastRecordedDataset : serialManager.stopRecording(false);
       if (!ds) return;
-      
-      const suffix = filtered ? "filtered_mV" : "raw_mV";
-      const header = `datetime_local,${muscleNames.ch1}_${suffix},${muscleNames.ch2}_${suffix},${muscleNames.ch3}_${suffix},${muscleNames.ch4}_${suffix}`;
-      
+      const head = "t,ch1,ch2,ch3,ch4\n";
       const rows = ds.samples
-        .map((s, idx) => {
-          const datetimeLocal = getDatetimeLocal(idx);
-          return `${datetimeLocal},${s.ch1.toFixed(2)},${s.ch2.toFixed(2)},${s.ch3.toFixed(2)},${s.ch4.toFixed(2)}`;
-        })
+        .map(
+          (s) =>
+            `${s.t.toFixed(4)},${s.ch1.toFixed(3)},${s.ch2.toFixed(3)},${s.ch3.toFixed(3)},${s.ch4.toFixed(3)}`
+        )
         .join("\n");
-      
-      const blob = new Blob([metaLine1 + "\n" + metaLine2 + "\n" + header + "\n" + rows], { type: "text/csv;charset=utf-8" });
+      const blob = new Blob([head + rows], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${meta.participant}_trial${meta.trial_no}_${meta.exercise}_${filtered ? "filtered" : "raw"}.csv`;
-      document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
       URL.revokeObjectURL(url);
     };
 
-    const downloadLongCSV = () => {
-      const ds = lastRecordedDataset;
-      if (!ds) return;
-      
-      const header = `datetime_local,channel,muscle,value_mV`;
-      
-      const rows: string[] = [];
-      ds.samples.forEach((s, idx) => {
-        const datetimeLocal = getDatetimeLocal(idx);
-        const channels = [
-          { ch: 1, muscle: muscleNames.ch1, val: s.ch1 },
-          { ch: 2, muscle: muscleNames.ch2, val: s.ch2 },
-          { ch: 3, muscle: muscleNames.ch3, val: s.ch3 },
-          { ch: 4, muscle: muscleNames.ch4, val: s.ch4 },
-        ];
-        
-        channels.forEach(({ ch, muscle, val }) => {
-          rows.push(`${datetimeLocal},${ch},${muscle},${val.toFixed(2)}`);
-        });
-      });
-      
-      const blob = new Blob([metaLine1 + "\n" + metaLine2 + "\n" + header + "\n" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${meta.participant}_trial${meta.trial_no}_${meta.exercise}_long_filtered.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    };
-
-    // Download all 3 file formats
-    downloadWideCSV(false);  // Raw wide format
-    downloadWideCSV(true);   // Filtered wide format (aligned)
-    downloadLongCSV();       // Long format (stacked channels)
+    // Download both raw and filtered CSV files
+    downloadCSV(true);
+    downloadCSV(false);
 
     // Open alignment analysis modal
     setShowAlignModal(true);
