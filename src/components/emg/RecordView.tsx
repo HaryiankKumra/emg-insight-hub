@@ -420,10 +420,11 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
       </nav>
 
       {/* ═════════════════ MAIN CONTENT CONTAINER ═════════════════ */}
-      <main className="flex-1 p-3 overflow-auto space-y-3">
+      <main className="flex-1 overflow-auto bg-background/50">
+        <div className="max-w-[1600px] mx-auto p-6 space-y-6">
         
         {/* Connection & Record Metadata Panel */}
-        <section className="panel p-3 bg-card/40 grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+        <section className="bg-card/50 border border-border/40 rounded-lg px-5 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
           
           {/* USB Serial Connector settings */}
           <div className="lg:col-span-4 grid grid-cols-2 gap-2 items-end">
@@ -568,136 +569,148 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
         </section>
 
         {/* System Diagnostics stats Row */}
-        <section className="grid grid-cols-2 md:grid-cols-6 gap-2 text-center font-mono select-none">
-          <div className="border border-border bg-[#090d16]/30 p-2.5 rounded-sm">
-            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase">Packets Received</span>
-            <span className="block text-base font-bold text-emerald-400 text-glow-green mt-1">{stats.rxPackets.toLocaleString()}</span>
+        <section className="px-4 grid grid-cols-2 md:grid-cols-6 gap-3 text-center font-mono select-none">
+          <div className="border border-border/40 bg-[#090d16]/40 px-4 py-3 rounded-lg hover:border-border/60 transition-colors">
+            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase font-semibold">Packets Received</span>
+            <span className="block text-2xl font-bold text-emerald-400 text-glow-green mt-1.5">{stats.rxPackets.toLocaleString()}</span>
             <span className="block text-[7px] text-muted-foreground/60 uppercase tracking-wider mt-0.5">total rx</span>
           </div>
-          <div className="border border-border bg-[#090d16]/30 p-2.5 rounded-sm">
-            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase">Parse Errors</span>
-            <span className={`block text-base font-bold mt-1 ${stats.rxErrors > 0 ? "text-destructive" : "text-muted-foreground"}`}>{stats.rxErrors}</span>
+          <div className="border border-border/40 bg-[#090d16]/40 px-4 py-3 rounded-lg hover:border-border/60 transition-colors">
+            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase font-semibold">Parse Errors</span>
+            <span className={`block text-2xl font-bold mt-1.5 ${stats.rxErrors > 0 ? "text-destructive" : "text-muted-foreground"}`}>{stats.rxErrors}</span>
             <span className="block text-[7px] text-muted-foreground/60 uppercase tracking-wider mt-0.5">malformed</span>
           </div>
-          <div className="border border-border bg-[#090d16]/30 p-2.5 rounded-sm">
-            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase">Data Received</span>
-            <span className="block text-base font-bold text-[var(--neon-cyan)] text-glow-cyan mt-1">
+          <div className="border border-border/40 bg-[#090d16]/40 px-4 py-3 rounded-lg hover:border-border/60 transition-colors">
+            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase font-semibold">Data Received</span>
+            <span className="block text-2xl font-bold text-[var(--neon-cyan)] text-glow-cyan mt-1.5">
               {stats.bytesReceived < 1024 ? `${stats.bytesReceived} B` : (stats.bytesReceived < 1024 * 1024 ? `${(stats.bytesReceived / 1024).toFixed(1)} KB` : `${(stats.bytesReceived / (1024 * 1024)).toFixed(2)} MB`)}
             </span>
             <span className="block text-[7px] text-muted-foreground/60 uppercase tracking-wider mt-0.5">bytes size</span>
           </div>
-          <div className="border border-border bg-[#090d16]/30 p-2.5 rounded-sm">
-            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase">Sample Rate</span>
-            <span className="block text-base font-bold text-primary text-glow-green mt-1">
-              {connected ? `${serialManager.hwSampleRate} Hz` : "—"}
+          <div className="border border-border/40 bg-[#090d16]/40 px-4 py-3 rounded-lg hover:border-border/60 transition-colors">
+            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase font-semibold">Sample Rate</span>
+            <span className="block text-2xl font-bold text-primary text-glow-green mt-1.5">
+              {connected ? `${serialManager.hwSampleRate}` : "—"}
             </span>
-            <span className="block text-[7px] text-muted-foreground/60 uppercase tracking-wider mt-0.5">master dt</span>
+            <span className="block text-[7px] text-muted-foreground/60 uppercase tracking-wider mt-0.5">Hz master</span>
           </div>
-          <div className="border border-border bg-[#090d16]/30 p-2.5 rounded-sm">
-            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase">Data Link</span>
-            <span className="block text-base font-bold text-slate-200 mt-1">{connected ? "Live" : "—"}</span>
+          <div className="border border-border/40 bg-[#090d16]/40 px-4 py-3 rounded-lg hover:border-border/60 transition-colors">
+            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase font-semibold">Data Link</span>
+            <span className="block text-2xl font-bold text-slate-200 mt-1.5">{connected ? "Live" : "—"}</span>
             <span className="block text-[7px] text-muted-foreground/60 uppercase tracking-wider mt-0.5">Web serial</span>
           </div>
-          <div className="border border-border bg-[#090d16]/30 p-2.5 rounded-sm">
-            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase">Recording</span>
-            <span className={`block text-base font-bold mt-1 ${isRecording ? "text-destructive animate-pulse" : "text-muted-foreground"}`}>
+          <div className="border border-border/40 bg-[#090d16]/40 px-4 py-3 rounded-lg hover:border-border/60 transition-colors">
+            <span className="block text-[8px] text-muted-foreground tracking-widest uppercase font-semibold">Recording</span>
+            <span className={`block text-2xl font-bold mt-1.5 ${isRecording ? "text-destructive animate-pulse" : "text-muted-foreground"}`}>
               {isRecording ? "Active" : "Idle"}
             </span>
-            <span className="block text-[7px] text-muted-foreground/60 uppercase tracking-wider mt-0.5">status state</span>
+            <span className="block text-[7px] text-muted-foreground/60 uppercase tracking-wider mt-0.5">status</span>
           </div>
         </section>
 
-        {/* 2x2 Channels Waveforms grid */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[1, 2, 3, 4].map((chId) => {
-            const label = CHANNEL_LABELS[`ch${chId}` as Channel] || `CH${chId}`;
-            const color = CH_COLORS[chId as 1 | 2 | 3 | 4].line;
-            const ref = [canvasRef1, canvasRef2, canvasRef3, canvasRef4][chId - 1];
-            const chMetrics = metrics[chId];
+        {/* 2x2 Channels Waveforms grid — larger, cleaner layout */}
+        <section className="px-4 py-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {[1, 2, 3, 4].map((chId) => {
+              const label = CHANNEL_LABELS[`ch${chId}` as Channel] || `CH${chId}`;
+              const color = CH_COLORS[chId as 1 | 2 | 3 | 4].line;
+              const ref = [canvasRef1, canvasRef2, canvasRef3, canvasRef4][chId - 1];
+              const chMetrics = metrics[chId];
 
-            return (
-              <article key={chId} className="panel p-3 bg-card/50 flex flex-col gap-2 border-border/80">
-                <header className="flex justify-between items-center border-b border-border/40 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span 
-                      className="size-5 rounded-sm grid place-items-center text-[10px] font-bold text-black"
-                      style={{ backgroundColor: color }}
-                    >
-                      {chId}
-                    </span>
-                    <div>
-                      <h4 className="text-xs font-bold text-foreground leading-none uppercase">
-                        {label.split(" (")[0]}
-                      </h4>
-                      <span className="text-[7.5px] font-mono text-muted-foreground uppercase mt-0.5 block">
-                        slave {chId - 1} · {label.split(" (")[1]?.replace(")", "") || "TA"}
+              return (
+                <article key={chId} className="bg-card/60 border border-border/50 rounded-lg overflow-hidden hover:border-border transition-all duration-200 flex flex-col">
+                  {/* Header with channel name and metrics */}
+                  <header className="flex justify-between items-center border-b border-border/30 px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span 
+                        className="size-7 rounded-md grid place-items-center text-[11px] font-bold text-black flex-shrink-0"
+                        style={{ backgroundColor: color }}
+                      >
+                        {chId}
                       </span>
+                      <div>
+                        <h4 className="text-sm font-bold text-foreground leading-tight uppercase">
+                          {label.split(" (")[0]}
+                        </h4>
+                        <span className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest">
+                          slave {chId - 1}
+                        </span>
+                      </div>
                     </div>
+
+                    <div className="flex items-center gap-4 text-right">
+                      <div className="font-mono">
+                        <span className="block text-[8px] text-muted-foreground uppercase font-semibold tracking-wider">RMS (mV)</span>
+                        <span className="text-lg font-bold" style={{ color }}>
+                          {connected ? chMetrics.rms : "—"}
+                        </span>
+                      </div>
+                      <div className="font-mono">
+                        <span className="block text-[8px] text-muted-foreground uppercase font-semibold tracking-wider">Peak (mV)</span>
+                        <span className="text-lg font-bold" style={{ color }}>
+                          {connected ? chMetrics.peak : "—"}
+                        </span>
+                      </div>
+                      
+                      <button
+                        onClick={() => toggleAutoScale(chId)}
+                        className={`px-2.5 py-1 text-[8px] font-mono tracking-widest border rounded-sm uppercase font-semibold transition-all flex-shrink-0 ${
+                          autoScale[chId] 
+                            ? "bg-primary/15 border-primary/60 text-primary" 
+                            : "border-border/40 text-muted-foreground hover:border-border/60"
+                        }`}
+                      >
+                        {autoScale[chId] ? "⤢ Auto" : "⤢ Fixed"}
+                      </button>
+                    </div>
+                  </header>
+
+                  {/* Large waveform canvas - 220px height (matches emg-monitor's 200px + padding) */}
+                  <div className={`px-4 py-3 bg-black/30 flex-1 flex flex-col relative ${recordDuration > 30 ? 'overflow-x-auto' : ''}`}>
+                    <div className="flex-1 min-h-0">
+                      <canvas 
+                        ref={ref} 
+                        className="w-full h-full block" 
+                        style={{ minHeight: "220px" }}
+                      />
+                    </div>
+                    {!connected && (
+                      <div className="absolute inset-0 grid place-items-center text-[10px] font-mono uppercase tracking-widest text-muted-foreground/25 pointer-events-none">
+                        Channel Stream Idle
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-3 text-right">
-                    <div className="font-mono">
-                      <span className="block text-[7.5px] text-muted-foreground uppercase leading-none">RMS (mV)</span>
-                      <span className="text-base font-bold" style={{ color: color }}>
-                        {connected ? chMetrics.rms : "—"}
-                      </span>
+                  {/* Channel detail metrics footer */}
+                  <div className="grid grid-cols-4 divide-x divide-border/20 border-t border-border/30 bg-[#090d16]/40">
+                    <div className="text-center px-3 py-3 font-mono text-[8.5px]">
+                      <span className="block text-muted-foreground uppercase font-semibold tracking-wider leading-tight">Mean</span>
+                      <strong className="block text-sm text-foreground mt-1.5">{connected ? chMetrics.mean : "—"}</strong>
+                      <span className="block text-[7px] text-muted-foreground/60 mt-0.5">mV</span>
                     </div>
-                    <div className="font-mono">
-                      <span className="block text-[7.5px] text-muted-foreground uppercase leading-none">Peak (mV)</span>
-                      <span className="text-base font-bold" style={{ color: color }}>
-                        {connected ? chMetrics.peak : "—"}
-                      </span>
+                    <div className="text-center px-3 py-3 font-mono text-[8.5px]">
+                      <span className="block text-muted-foreground uppercase font-semibold tracking-wider leading-tight">Peak-Peak</span>
+                      <strong className="block text-sm text-foreground mt-1.5">{connected ? chMetrics.pp : "—"}</strong>
+                      <span className="block text-[7px] text-muted-foreground/60 mt-0.5">mV</span>
                     </div>
-                    
-                    <button
-                      onClick={() => toggleAutoScale(chId)}
-                      className={`px-2 py-1 text-[8px] font-mono tracking-wider border rounded-sm uppercase transition-all ${
-                        autoScale[chId] 
-                          ? "bg-primary/10 border-primary text-primary" 
-                          : "border-border text-muted-foreground"
-                      }`}
-                    >
-                      {autoScale[chId] ? "⤢ Auto" : "⤢ Fixed"}
-                    </button>
-                  </div>
-                </header>
-
-                {/* Oscilloscope scrolling waveform trace with optional horizontal scroll for long recordings */}
-                <div className={`h-[140px] bg-black/40 border border-border/40 rounded-sm relative ${recordDuration > 30 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-hidden'}`}>
-                  <div className={recordDuration > 30 ? 'min-w-full' : 'w-full'}>
-                    <canvas ref={ref} className={`${recordDuration > 30 ? 'w-full min-w-max' : 'w-full'} h-full block`} />
-                  </div>
-                  {!connected && (
-                    <div className="absolute inset-0 grid place-items-center text-[9px] font-mono uppercase tracking-widest text-muted-foreground/30">
-                      Channel Stream Idle
+                    <div className="text-center px-3 py-3 font-mono text-[8.5px]">
+                      <span className="block text-muted-foreground uppercase font-semibold tracking-wider leading-tight">RMS</span>
+                      <strong className="block text-sm text-foreground mt-1.5">{connected ? chMetrics.rms : "—"}</strong>
+                      <span className="block text-[7px] text-muted-foreground/60 mt-0.5">mV</span>
                     </div>
-                  )}
-                </div>
-
-                {/* Channel diagnostics values footers */}
-                <div className="grid grid-cols-4 gap-1.5 text-center font-mono text-[9px] bg-[#090d16]/30 border border-border/30 p-2.5 rounded-sm mt-1">
-                  <div>
-                    <span className="block text-muted-foreground uppercase">Mean (mV)</span>
-                    <strong className="block text-[11px] text-foreground mt-0.5">{connected ? chMetrics.mean : "—"}</strong>
+                    <div className="text-center px-3 py-3 font-mono text-[8.5px]">
+                      <span className="block text-muted-foreground uppercase font-semibold tracking-wider leading-tight">Rate</span>
+                      <strong className="block text-sm text-foreground mt-1.5">{connected ? `${chMetrics.rate}` : "—"}</strong>
+                      <span className="block text-[7px] text-muted-foreground/60 mt-0.5">Hz</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="block text-muted-foreground uppercase">Peak-Peak (mV)</span>
-                    <strong className="block text-[11px] text-foreground mt-0.5">{connected ? chMetrics.pp : "—"}</strong>
-                  </div>
-                  <div>
-                    <span className="block text-muted-foreground uppercase">RMS (mV)</span>
-                    <strong className="block text-[11px] text-foreground mt-0.5">{connected ? chMetrics.rms : "—"}</strong>
-                  </div>
-                  <div>
-                    <span className="block text-muted-foreground uppercase">Rate</span>
-                    <strong className="block text-[11px] text-foreground mt-0.5">{connected ? `${chMetrics.rate} Hz` : "—"}</strong>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
+                </article>
+              );
+            })}
+          </div>
         </section>
 
+      </div>
       </main>
 
       {/* ═════════════════ DATA ALIGNMENT MODAL OVERLAY ═════════════════ */}
