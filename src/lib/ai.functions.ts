@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { GoogleGenAI } from "@google/genai";
 import {
   CHANNELS,
   CHANNEL_LABELS,
@@ -166,62 +167,25 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
     try {
       geminiLimiter.recordRequest();
       
-      // Use Lovable gateway API endpoint with custom fetch for AQ.* keys
-      const response = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-goog-api-key": geminiKey,
-          },
-          body: JSON.stringify({
-            system_instruction: {
-              parts: [
-                {
-                  text: "You are a precise biomedical signal-processing assistant.",
-                },
-              ],
-            },
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: prompt,
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              maxOutputTokens: 800,
-            },
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.error?.message || response.statusText;
-        if (response.status === 400 && errorMsg.includes("API key")) {
-          throw new Error("Invalid GEMINI_API_KEY. Check your key in project secrets.");
-        }
-        if (response.status === 429) {
-          throw new Error("Gemini quota exceeded. Try again shortly.");
-        }
-        throw new Error(`Gemini API error (${response.status}): ${errorMsg}`);
-      }
-
-      const result = await response.json();
-      const text = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "(no response)";
+      // Use Interactions API with @google/genai
+      const ai = new GoogleGenAI({
+        apiKey: geminiKey,
+      });
+      
+      const interaction = await ai.interactions.create({
+        model: "gemini-3.5-flash",
+        input: prompt,
+      });
+      
+      const text = interaction.output_text ?? "(no response)";
       analysisCache.set(cacheKey, { text, timestamp: Date.now() });
       return { text, cached: false };
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      if (errMsg.includes("Invalid GEMINI_API_KEY")) {
+      if (errMsg.includes("UNAUTHENTICATED") || errMsg.includes("API_KEY_INVALID") || errMsg.includes("Invalid API Key")) {
         throw new Error("Invalid GEMINI_API_KEY. Check your key in project secrets.");
       }
-      if (errMsg.includes("quota exceeded")) {
+      if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota exceeded")) {
         throw new Error("Gemini quota exceeded. Try again shortly.");
       }
       throw new Error(`Gemini error: ${errMsg}`);
