@@ -900,8 +900,9 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
       const hurdleStartX = w * 0.9; // Where hurdles start (right side)
       const hw = 12;
       
+      // Draw approaching hurdles with speed lines
       for (let i = 0; i < gameRef.current.numHurdles; i++) {
-        // Position based on scrollOffset
+        // Position based on scrollOffset - hurdles move LEFT (toward player)
         const hurdleBaseX = hurdleStartX + i * hurdleSpacing;
         const hx = hurdleBaseX - gameRef.current.scrollOffset;
         
@@ -913,6 +914,20 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         let state = "future";
         if (i < gameRef.current.currentHurdle) state = "done";
         else if (i === gameRef.current.currentHurdle) state = "current";
+
+        // Draw speed lines for approaching hurdles (coming toward player)
+        if (state === "current" || (state === "future" && hx < w * 0.7)) {
+          ctx.strokeStyle = "rgba(0, 229, 200, 0.15)";
+          ctx.lineWidth = 1;
+          for (let sl = 0; sl < 3; sl++) {
+            const offset = (now / 200 + sl * 0.15) % 1;
+            const y = top + (hH / 3) * (1 + sl);
+            ctx.beginPath();
+            ctx.moveTo(hx - 20 - offset * 15, y);
+            ctx.lineTo(hx - 5 - offset * 15, y);
+            ctx.stroke();
+          }
+        }
 
         if (state === "done") {
           ctx.fillStyle = "rgba(0, 201, 122, 0.1)";
@@ -937,11 +952,13 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
           ctx.fillText((i + 1).toString(), hx, ty + 16);
         } else if (state === "current") {
           const pulse = 0.65 + 0.35 * Math.sin(now / 280);
-          ctx.shadowColor = `rgba(0, 229, 200, ${0.5 * pulse})`;
-          ctx.shadowBlur = 20 * pulse;
-          ctx.fillStyle = `rgba(0, 229, 200, ${0.1 * pulse})`;
-          ctx.strokeStyle = `rgba(0, 229, 200, ${0.9 * pulse})`;
-          ctx.lineWidth = 2;
+          
+          // Pulsing glow effect
+          ctx.shadowColor = `rgba(0, 229, 200, ${0.8 * pulse})`;
+          ctx.shadowBlur = 25 * pulse;
+          ctx.fillStyle = `rgba(0, 229, 200, ${0.15 * pulse})`;
+          ctx.strokeStyle = `rgba(0, 229, 200, ${0.95 * pulse})`;
+          ctx.lineWidth = 2.5;
           ctx.beginPath();
           ctx.rect(hx - hw / 2, top, hw, hH);
           ctx.fill();
@@ -958,16 +975,24 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
             ctx.stroke();
           }
 
-          // Floating pointer
-          ctx.fillStyle = `rgba(0, 229, 200, ${0.7 * pulse})`;
-          ctx.font = "8px var(--font-mono)";
-          ctx.fillText("▼", hx, top - 8);
+          // Prominent incoming indicator
+          ctx.fillStyle = `rgba(255, 100, 100, ${0.4 + 0.3 * pulse})`;
+          ctx.font = "bold 10px var(--font-mono)";
+          ctx.textAlign = "center";
+          ctx.fillText("← INCOMING", hx, top - 16);
 
+          // Floating pointer
+          ctx.fillStyle = `rgba(0, 229, 200, ${0.8 * pulse})`;
           ctx.font = "bold 9px var(--font-mono)";
-          ctx.fillStyle = "rgba(0, 229, 200, 0.9)";
+          ctx.fillText("▼", hx, top - 5);
+
+          ctx.font = "bold 10px var(--font-mono)";
+          ctx.fillStyle = "rgba(0, 229, 200, 1)";
+          ctx.textAlign = "center";
           ctx.fillText((i + 1).toString(), hx, ty + 16);
+          ctx.textAlign = "left";
         } else {
-          // Future grey hurdle
+          // Future grey hurdle (approaching)
           ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
           ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
           ctx.lineWidth = 1;
@@ -978,6 +1003,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
           ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
           ctx.font = "8px var(--font-mono)";
+          ctx.textAlign = "center";
           ctx.fillText((i + 1).toString(), hx, ty + 16);
         }
       }
@@ -2414,61 +2440,18 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   HURDLE {currentHurdle + 1} / {numHurdles}
                 </h3>
                 <div className="font-mono text-[9px] text-muted-foreground mt-1">
-                  Time: {Math.max(0, sessionTimeRemaining).toFixed(1)}s / {sessionTimeLimit * 60}s
+                  Session: {Math.max(0, sessionTimeRemaining).toFixed(1)}s / {sessionTimeLimit * 60}s
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <span className="font-mono text-[9px] font-bold text-orange-400 bg-orange-400/10 border border-orange-400/25 px-2.5 py-0.5 rounded-full uppercase tracking-widest">
                   Attempt {totalAttempts}
                 </span>
 
-                {/* Large countdown timer display */}
-                <div className="font-mono font-bold text-2xl text-primary text-glow-green ml-auto">
+                {/* Single clear countdown timer display */}
+                <div className="font-mono font-bold text-3xl text-primary text-glow-green">
                   {countdownDisplay}s
-                </div>
-
-                {/* Micro SVG ring timer */}
-                <div className="relative size-7 flex items-center justify-center">
-                  <svg className="size-full" viewBox="0 0 32 32">
-                    <circle
-                      cx="16"
-                      cy="16"
-                      r="13"
-                      fill="none"
-                      stroke="rgba(255,255,255,0.06)"
-                      strokeWidth="3"
-                    />
-                    <circle
-                      cx="16"
-                      cy="16"
-                      r="13"
-                      fill="none"
-                      stroke="#00e5c8"
-                      strokeWidth="3"
-                      strokeDasharray="81.6"
-                      // Countdown mapping
-                      strokeDashoffset={
-                        81.6 *
-                        (1.0 -
-                          Math.min(
-                            1.0,
-                            (attemptTimeLimit -
-                              (Date.now() - gameRef.current.currentAttemptStart) / 1000) /
-                              attemptTimeLimit,
-                          ))
-                      }
-                      strokeLinecap="round"
-                      transform="rotate(-90 16 16)"
-                      className="transition-all duration-100"
-                    />
-                  </svg>
-                  <span className="absolute font-mono text-[8px] font-bold text-primary">
-                    {Math.max(
-                      0,
-                      attemptTimeLimit - (Date.now() - gameRef.current.currentAttemptStart) / 1000,
-                    ).toFixed(1)}
-                  </span>
                 </div>
               </div>
             </div>
@@ -2745,47 +2728,49 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
             </div>
 
             {/* Actions grid layout */}
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-border mt-1">
-              <Button
-                onClick={handleExportJSON}
-                className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
-              >
-                <Download className="size-3 mr-1" /> Session JSON
-              </Button>
-              <Button
-                onClick={handleExportAttemptsCSV}
-                className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
-              >
-                <Download className="size-3 mr-1" /> Attempts CSV
-              </Button>
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={handleExportJSON}
+                  className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
+                >
+                  <Download className="size-3 mr-1" /> Session JSON
+                </Button>
+                <Button
+                  onClick={handleExportAttemptsCSV}
+                  className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
+                >
+                  <Download className="size-3 mr-1" /> Attempts CSV
+                </Button>
 
-              {connected && (
-                <>
-                  <Button
-                    onClick={() => handleExportEMGCSV(true)}
-                    className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
-                  >
-                    <Download className="size-3 mr-1" /> EMG Filtered
-                  </Button>
-                  <Button
-                    onClick={() => handleExportEMGCSV(false)}
-                    className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
-                  >
-                    <Download className="size-3 mr-1" /> EMG Raw
-                  </Button>
-                  <Button
-                    onClick={() => setShowAlignModal(true)}
-                    className="uppercase font-bold tracking-wider text-[10px] size-8 border border-border/80 text-[var(--neon-cyan)]"
-                  >
-                    📊 Alignment %
-                  </Button>
-                </>
-              )}
+                {connected && (
+                  <>
+                    <Button
+                      onClick={() => handleExportEMGCSV(true)}
+                      className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
+                    >
+                      <Download className="size-3 mr-1" /> EMG Filtered
+                    </Button>
+                    <Button
+                      onClick={() => handleExportEMGCSV(false)}
+                      className="flex-1 uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
+                    >
+                      <Download className="size-3 mr-1" /> EMG Raw
+                    </Button>
+                    <Button
+                      onClick={() => setShowAlignModal(true)}
+                      className="uppercase font-bold tracking-wider text-[10px] size-8 border border-border/80 text-[var(--neon-cyan)]"
+                    >
+                      📊 Alignment %
+                    </Button>
+                  </>
+                )}
+              </div>
 
               <Button
                 onClick={handleResetToSetup}
                 variant="secondary"
-                className="w-full uppercase font-bold tracking-wider text-[10px] size-8 border border-border mt-1"
+                className="w-full uppercase font-bold tracking-wider text-[10px] size-8 border border-border"
               >
                 Start New Game Session
               </Button>

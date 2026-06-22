@@ -1190,53 +1190,61 @@ function ReportView() {
         import("jspdf"),
       ]);
       
-      // Wait a bit for charts to fully render
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait for all charts to render
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Capture with better settings for charts
-      const canvas = await html2canvas(el, { 
+      // Create a clone to avoid side effects
+      const clone = el.cloneNode(true) as HTMLElement;
+      document.body.appendChild(clone);
+      
+      // Capture with robust settings
+      const canvas = await html2canvas(clone, { 
         backgroundColor: "#0d121b", 
-        scale: 2,
+        scale: 1.5,
+        allowTaint: true,
         useCORS: true,
         logging: false,
-        timeout: 10000,
-        windowHeight: el.scrollHeight,
-        windowWidth: el.scrollWidth,
+        timeout: 15000,
+        imageTimeout: 15000,
+        windowHeight: clone.scrollHeight,
+        windowWidth: clone.scrollWidth,
       });
       
+      document.body.removeChild(clone);
+      
+      // Generate PDF with proper pagination
       const img = canvas.toDataURL("image/png");
-      const pdfWidth = 210; // A4 width in mm
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pageWidth = 210; // A4 width in mm
+      const pageHeight = 297; // A4 height in mm
+      const margin = 8;
+      const contentWidth = pageWidth - 2 * margin;
+      const contentHeight = (canvas.height * contentWidth) / canvas.width;
       
       const pdf = new jsPDF({
-        orientation: pdfHeight > pdfWidth ? "portrait" : "portrait",
+        orientation: "portrait",
         unit: "mm",
         format: "a4",
       });
       
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 10;
-      
-      let heightLeft = pdfHeight;
       let position = 0;
+      let pdfHeight = pageHeight - 2 * margin;
       
-      // Add image in sections if needed
-      pdf.addImage(img, "PNG", margin, margin, pageWidth - 2 * margin, (canvas.height * (pageWidth - 2 * margin)) / canvas.width);
-      heightLeft -= pageHeight;
+      // Add content across multiple pages if needed
+      pdf.addImage(img, "PNG", margin, margin, contentWidth, contentHeight);
       
-      while (heightLeft >= 0) {
-        position = heightLeft - pdfHeight;
+      let remainingHeight = contentHeight - pdfHeight;
+      while (remainingHeight > 0) {
+        position -= pdfHeight;
         pdf.addPage();
-        pdf.addImage(img, "PNG", margin, position + margin, pageWidth - 2 * margin, (canvas.height * (pageWidth - 2 * margin)) / canvas.width);
-        heightLeft -= pageHeight;
+        pdf.addImage(img, "PNG", margin, position + margin, contentWidth, contentHeight);
+        remainingHeight -= pdfHeight;
       }
       
       pdf.save(`emg-report-${ds.id}.pdf`);
-      alert("PDF report exported successfully!");
+      alert("✓ PDF exported successfully!");
     } catch (err: any) {
       console.error("PDF export error:", err);
-      alert("Failed to export PDF. Please try again.");
+      alert(`Failed to export PDF: ${err.message || "Unknown error"}`);
     }
   }
 
