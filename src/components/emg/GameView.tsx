@@ -281,9 +281,11 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     waveHistories: { 1: [], 2: [], 3: [], 4: [] } as Record<number, number[]>,
     waveHistoryCombined: [] as number[],
     sessionStartTime: 0,
+    sessionEndTime: 0, // frozen at completeSession/stop
     sessionTimeLimit: 5, // in minutes
     sessionElapsedTime: 0, // in seconds
     scrollOffset: 0, // Dino-style: how far we've scrolled through hurdles (pixels)
+    scrollSpeed: 60, // px/sec continuous background scroll
     width: 0,
     height: 0,
     threshold: 30,
@@ -454,6 +456,12 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
         if (elapsedSeconds >= sessionTimeSeconds && gameRef.current.phase !== "results") {
           completeSession();
         }
+      }
+
+      // Continuous background scroll towards the dino during active gameplay
+      const gameplayPhases = ["ready", "approaching", "at_hurdle", "jumping", "hit", "resting"];
+      if (gameplayPhases.includes(gameRef.current.phase)) {
+        gameRef.current.scrollOffset += gameRef.current.scrollSpeed * dt;
       }
 
       // Update Phase Logic
@@ -731,6 +739,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     };
 
     const completeSession = () => {
+      gameRef.current.sessionEndTime = Date.now();
       changePhase("results");
       setShowStopButton(false);
 
@@ -1624,6 +1633,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
     gameRef.current.particles = [];
     gameRef.current.hurdleLog = [];
     gameRef.current.sessionStartTime = Date.now();
+    gameRef.current.sessionEndTime = 0;
     gameRef.current.sessionTimeLimit = sessionTimeLimit;
     gameRef.current.sessionElapsedTime = 0;
     gameRef.current.scrollOffset = 0; // Reset scroll for new game
@@ -1671,9 +1681,10 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
 
   const handleStopGame = () => {
     // Stop game immediately and show results
+    gameRef.current.sessionEndTime = Date.now();
     setShowStopButton(false);
     changePhase("results");
-    
+
     // Stop serialManager recording
     if (serialManager.getIsRecording()) {
       const dataset = serialManager.stopRecording(true);
@@ -2516,7 +2527,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                   HURDLE {currentHurdle + 1} / {numHurdles}
                 </h3>
                 <div className="font-mono text-[9px] text-muted-foreground mt-1">
-                  Time: {Math.max(0, sessionTimeRemaining).toFixed(1)}s / {sessionTimeLimit * 60}s
+                  Elapsed: {Math.max(0, sessionTimeLimit * 60 - sessionTimeRemaining).toFixed(1)}s / {sessionTimeLimit * 60}s
                 </div>
               </div>
 
@@ -2528,49 +2539,6 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
                 {/* Large countdown timer display */}
                 <div className="font-mono font-bold text-2xl text-primary text-glow-green ml-auto">
                   {countdownDisplay}s
-                </div>
-
-                {/* Micro SVG ring timer */}
-                <div className="relative size-7 flex items-center justify-center">
-                  <svg className="size-full" viewBox="0 0 32 32">
-                    <circle
-                      cx="16"
-                      cy="16"
-                      r="13"
-                      fill="none"
-                      stroke="rgba(255,255,255,0.06)"
-                      strokeWidth="3"
-                    />
-                    <circle
-                      cx="16"
-                      cy="16"
-                      r="13"
-                      fill="none"
-                      stroke="#00e5c8"
-                      strokeWidth="3"
-                      strokeDasharray="81.6"
-                      // Countdown mapping
-                      strokeDashoffset={
-                        81.6 *
-                        (1.0 -
-                          Math.min(
-                            1.0,
-                            (attemptTimeLimit -
-                              (Date.now() - gameRef.current.currentAttemptStart) / 1000) /
-                              attemptTimeLimit,
-                          ))
-                      }
-                      strokeLinecap="round"
-                      transform="rotate(-90 16 16)"
-                      className="transition-all duration-100"
-                    />
-                  </svg>
-                  <span className="absolute font-mono text-[8px] font-bold text-primary">
-                    {Math.max(
-                      0,
-                      attemptTimeLimit - (Date.now() - gameRef.current.currentAttemptStart) / 1000,
-                    ).toFixed(1)}
-                  </span>
                 </div>
               </div>
             </div>
@@ -2729,7 +2697,7 @@ export function GameView({ onBackToDashboard }: { onBackToDashboard?: () => void
               </div>
               <div className="border border-border/60 bg-muted/55 rounded-sm p-3">
                 <span className="block text-2xl font-bold text-[var(--neon-cyan)] text-glow-cyan">
-                  {((Date.now() - gameRef.current.sessionStartTime) / 1000).toFixed(1)}s
+                  {(((gameRef.current.sessionEndTime || Date.now()) - gameRef.current.sessionStartTime) / 1000).toFixed(1)}s
                 </span>
                 <span className="block text-[8px] text-muted-foreground tracking-widest uppercase mt-1">
                   Session Duration
