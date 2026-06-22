@@ -176,7 +176,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
 
         const color = CH_COLORS[chId as 1 | 2 | 3 | 4];
 
-        // Determine Y Range
+        // Determine Y Range - centered around midpoint
         let yMin = 0;
         let yMax = 3300;
 
@@ -185,8 +185,10 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
           const min = Math.min(...data);
           const range = max - min || 10;
           const pad = range * 0.15;
-          yMin = Math.max(0, min - pad);
-          yMax = Math.min(3300, max + pad);
+          const mid = (max + min) / 2;
+          const halfRange = (range / 2) + pad;
+          yMin = Math.max(0, mid - halfRange);
+          yMax = Math.min(3300, mid + halfRange);
         }
 
         // Calculate nice axis steps
@@ -665,13 +667,13 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
                     </div>
                   </header>
 
-                  {/* Large waveform canvas - 220px height (matches emg-monitor's 200px + padding) */}
+                  {/* Waveform canvas - centered vertically, 160px height for better viewing */}
                   <div className={`px-4 py-3 bg-black/30 flex-1 flex flex-col relative ${recordDuration > 30 ? 'overflow-x-auto' : ''}`}>
                     <div className="flex-1 min-h-0">
                       <canvas 
                         ref={ref} 
                         className="w-full h-full block" 
-                        style={{ minHeight: "220px" }}
+                        style={{ minHeight: "160px" }}
                       />
                     </div>
                     {!connected && (
