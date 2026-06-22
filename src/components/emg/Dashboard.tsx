@@ -1197,6 +1197,30 @@ function ReportView() {
       const clone = el.cloneNode(true) as HTMLElement;
       document.body.appendChild(clone);
       
+      // Remove oklch color functions that html2canvas doesn't support
+      const removeOklchColors = (el: Element) => {
+        const style = window.getComputedStyle(el);
+        const elem = el as HTMLElement;
+        
+        // Strip oklch from inline styles
+        if (elem.style.color) {
+          elem.style.color = elem.style.color.replace(/oklch\([^)]+\)/g, "#0d121b");
+        }
+        if (elem.style.backgroundColor) {
+          elem.style.backgroundColor = elem.style.backgroundColor.replace(/oklch\([^)]+\)/g, "#0d121b");
+        }
+        if (elem.style.borderColor) {
+          elem.style.borderColor = elem.style.borderColor.replace(/oklch\([^)]+\)/g, "#999");
+        }
+        
+        // Recursively process children
+        for (let i = 0; i < el.children.length; i++) {
+          removeOklchColors(el.children[i]);
+        }
+      };
+      
+      removeOklchColors(clone);
+      
       // Capture with robust settings
       const canvas = await html2canvas(clone, { 
         backgroundColor: "#0d121b", 
