@@ -167,7 +167,7 @@ Be specific: call out the strongest and weakest channels by name, flag suspected
     const ai = new GoogleGenerativeAI({ apiKey: geminiKey });
     try {
       geminiLimiter.recordRequest();
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = ai.getGenerativeModel({ model: "gemini-flash-latest" });
       const result = await model.generateContent({
         contents: [{
           role: "user",

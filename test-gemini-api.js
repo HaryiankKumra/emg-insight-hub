@@ -26,8 +26,8 @@ async function testGeminiAPI() {
     const ai = new GoogleGenerativeAI({ apiKey: API_KEY });
 
     // Get the model
-    console.log("📍 Loading gemini-1.5-flash model...");
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    console.log("📍 Loading gemini-flash-latest model (Gemini 3.5 Flash)...");
+    const model = ai.getGenerativeModel({ model: "gemini-flash-latest" });
 
     // Test prompt with EMG signal analysis context
     const testPrompt = `You are a biomedical signal analysis expert. Analyze this hypothetical EMG signal summary:

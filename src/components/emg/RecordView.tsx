@@ -515,7 +515,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
               <select 
                 value={meta.exercise} 
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, exercise: e.target.value }; saveMetaCache(n); return n; }); }}
-                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`
+                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`}
               >
                 <option value="walking">Walking</option>
                 <option value="stair_ascent">Stair Ascent</option>
@@ -533,7 +533,7 @@ export function RecordView({ onSwitchView }: { onSwitchView?: (view: any) => voi
               <select 
                 value={meta.trial_no} 
                 onChange={(e) => { setMeta(prev => { const n = { ...prev, trial_no: parseInt(e.target.value) || 1 }; saveMetaCache(n); return n; }); }}
-                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`
+                className={`w-full border border-border rounded-sm p-1.5 text-xs text-foreground focus:border-primary/50 ${isDark ? 'bg-[#090d16]' : 'bg-slate-100'}`}
               >
                 {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
               </select>
